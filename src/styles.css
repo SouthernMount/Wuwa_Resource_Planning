@@ -890,7 +890,7 @@ label {
 
 .future-note {
   display: grid;
-  grid-template-columns: minmax(240px, 0.85fr) minmax(280px, 1.15fr);
+  grid-template-columns: 1fr;
   gap: 10px;
   margin-top: 14px;
   color: var(--text);
@@ -906,20 +906,30 @@ label {
 
 .future-note-summary {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: minmax(220px, 1.4fr) repeat(2, minmax(120px, 0.8fr));
   gap: 9px;
 }
 
-.future-note-summary span,
+.future-note-item {
+  display: grid;
+  align-content: space-between;
+  gap: 9px;
+  min-height: 86px;
+  border: 1px solid rgba(207, 219, 215, 0.75);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.5);
+  padding: 10px;
+}
+
+.future-note-item span,
 .future-note-detail span {
   color: var(--muted);
   font-size: 12px;
 }
 
-.future-note-summary strong,
+.future-note-item strong,
 .future-note-detail strong {
   display: block;
-  margin-top: 4px;
   color: var(--primary-dark);
   font-size: 18px;
   line-height: 1.2;

@@ -151,7 +151,7 @@
     const targetRank = Number(elements.targetRank.value);
     const weaponTarget = Number(elements.weaponTarget.value);
     elements.targetRankText.textContent = `${targetRank} 命`;
-    elements.weaponTargetText.textContent = `${weaponTarget} 把`;
+    elements.weaponTargetText.textContent = `精 ${weaponTarget}`;
     setSegmentedState("targetRank", targetRank);
     setSegmentedState("weaponTarget", weaponTarget);
     syncPityMeter(elements.charPity, elements.charPityFill, elements.charPityText);
@@ -291,10 +291,16 @@
     elements.futureNote.innerHTML = "";
     const summary = document.createElement("div");
     summary.className = "future-note-summary";
-    summary.innerHTML =
-      `<span>估算区间</span><strong>${currentIso || "--"} 到 ${nextIso || "--"}</strong>` +
-      `<span>累计天数</span><strong>${formatNumber(income.days)} 天</strong>` +
-      `<span>周一数量</span><strong>${formatNumber(income.mondayCount)} 个</strong>`;
+    [
+      ["估算区间", `${currentIso || "--"} 到 ${nextIso || "--"}`],
+      ["累计天数", `${formatNumber(income.days)} 天`],
+      ["周一数量", `${formatNumber(income.mondayCount)} 个`]
+    ].forEach(([label, value]) => {
+      const item = document.createElement("div");
+      item.className = "future-note-item";
+      item.innerHTML = `<span>${label}</span><strong>${value}</strong>`;
+      summary.appendChild(item);
+    });
     elements.futureNote.appendChild(summary);
 
     const detail = document.createElement("div");
