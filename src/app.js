@@ -11,6 +11,12 @@
     weaponPity: document.getElementById("weaponPity"),
     charGuaranteed: document.getElementById("charGuaranteed"),
     useSoftPity: document.getElementById("useSoftPity"),
+    targetRankText: document.getElementById("targetRankText"),
+    weaponTargetText: document.getElementById("weaponTargetText"),
+    charPityFill: document.getElementById("charPityFill"),
+    weaponPityFill: document.getElementById("weaponPityFill"),
+    charPityText: document.getElementById("charPityText"),
+    weaponPityText: document.getElementById("weaponPityText"),
     astrites: document.getElementById("astrites"),
     charWaves: document.getElementById("charWaves"),
     weaponWaves: document.getElementById("weaponWaves"),
@@ -26,9 +32,7 @@
     sessionState: document.getElementById("sessionState"),
     tenPullForm: document.getElementById("tenPullForm"),
     tenPullBanner: document.getElementById("tenPullBanner"),
-    limitedFiveStarPositions: document.getElementById("limitedFiveStarPositions"),
-    offFiveStarField: document.getElementById("offFiveStarField"),
-    offFiveStarPositions: document.getElementById("offFiveStarPositions"),
+    tenPullGrid: document.getElementById("tenPullGrid"),
     goldResults: document.getElementById("goldResults"),
     tenPullNote: document.getElementById("tenPullNote"),
     finishSession: document.getElementById("finishSession"),
@@ -50,11 +54,14 @@
     undoAllTenPulls: document.getElementById("undoAllTenPulls"),
     resetSession: document.getElementById("resetSession"),
     clearStorage: document.getElementById("clearStorage"),
-    saveStatus: document.getElementById("saveStatus")
+    saveStatus: document.getElementById("saveStatus"),
+    toastStack: document.getElementById("toastStack")
   };
 
   let appState = loadState();
   let planningRenderTaskId = 0;
+  let tenPullMarks = Array(10).fill(null);
+  let previewTaskId = 0;
 
   function defaultState() {
     return {
@@ -77,6 +84,19 @@
   function saveState() {
     localStorage.setItem(storageKey, JSON.stringify(appState));
     elements.saveStatus.textContent = "已保存到本地";
+  }
+
+  function showToast(message) {
+    if (!elements.toastStack || !message) return;
+    const toast = document.createElement("div");
+    toast.className = "toast";
+    toast.textContent = message;
+    elements.toastStack.appendChild(toast);
+    window.requestAnimationFrame(() => toast.classList.add("is-visible"));
+    window.setTimeout(() => {
+      toast.classList.remove("is-visible");
+      window.setTimeout(() => toast.remove(), 220);
+    }, 2200);
   }
 
   function readInput() {
@@ -110,6 +130,43 @@
     elements.charWaves.value = input.resources.characterWaves;
     elements.weaponWaves.value = input.resources.weaponWaves;
     elements.useSoftPity.checked = input.useSoftPity !== false;
+    syncInputDecorations();
+  }
+
+  function setSegmentedState(controlName, value) {
+    document.querySelectorAll(`[data-control="${controlName}"] button`).forEach((button) => {
+      const active = button.dataset.value === String(value);
+      button.classList.toggle("is-active", active);
+      button.setAttribute("aria-pressed", active ? "true" : "false");
+    });
+  }
+
+  function syncPityMeter(input, fill, text) {
+    const value = Math.max(0, Math.min(79, Number(input.value) || 0));
+    input.value = value;
+    fill.style.width = `${(value / 80) * 100}%`;
+    text.textContent = `距离硬保底 ${80 - value} 抽`;
+  }
+
+  function syncInputDecorations() {
+    const targetRank = Number(elements.targetRank.value);
+    const weaponTarget = Number(elements.weaponTarget.value);
+    elements.targetRankText.textContent = `${targetRank} 命`;
+    elements.weaponTargetText.textContent = `${weaponTarget} 把`;
+    setSegmentedState("targetRank", targetRank);
+    setSegmentedState("weaponTarget", weaponTarget);
+    syncPityMeter(elements.charPity, elements.charPityFill, elements.charPityText);
+    syncPityMeter(elements.weaponPity, elements.weaponPityFill, elements.weaponPityText);
+  }
+
+  function scheduleBasicPreview() {
+    syncInputDecorations();
+    if (appState.activeSession) return;
+    const taskId = ++previewTaskId;
+    window.setTimeout(() => {
+      if (taskId !== previewTaskId || appState.activeSession) return;
+      scheduleCalculateAndRender(readInput(), { characterCopies: 0, weaponCopies: 0 });
+    }, 160);
   }
 
   function formatPercent(value) {
@@ -186,6 +243,35 @@
       .join(" → ");
   }
 
+  function renderSequence(sequence) {
+    elements.pullSequence.innerHTML = "";
+    if (sequence.length === 0) {
+      elements.pullSequence.textContent = "目标已完成";
+      return;
+    }
+    const groups = [];
+    for (const banner of sequence) {
+      const lastGroup = groups[groups.length - 1];
+      if (lastGroup && lastGroup.banner === banner) {
+        lastGroup.count += 1;
+      } else {
+        groups.push({ banner, count: 1 });
+      }
+    }
+    groups.forEach((group, index) => {
+      if (index > 0) {
+        const arrow = document.createElement("span");
+        arrow.className = "route-arrow";
+        arrow.textContent = "→";
+        elements.pullSequence.appendChild(arrow);
+      }
+      const chip = document.createElement("span");
+      chip.className = `route-chip ${group.banner === "weapon" ? "weapon" : "character"}`;
+      chip.textContent = `${group.banner === "character" ? "限定角色" : "限定武器"} × ${group.count}`;
+      elements.pullSequence.appendChild(chip);
+    });
+  }
+
   function setPlanningLoading() {
     elements.completionProbability.textContent = "计算中...";
     elements.availablePulls.textContent = "计算中...";
@@ -210,7 +296,7 @@
     elements.availablePulls.textContent = `${formatNumber(available.totalFlexible)} 抽`;
     elements.missingPulls.textContent = `${formatNumber(missing.missingTotal)} 抽`;
     elements.missingAstrites.textContent = `${formatNumber(missing.missingAstrites)} 星声`;
-    elements.pullSequence.textContent = describeSequence(missing.sequence);
+    renderSequence(missing.sequence);
     elements.hardPityBreakdown.textContent = `硬保底最多还需角色 ${missing.characterDraws} 抽、武器 ${missing.weaponDraws} 抽；当前资源缺口为角色 ${missing.missingCharacter} 抽、武器 ${missing.missingWeapon} 抽。`;
     elements.modelBadge.textContent = input.useSoftPity ? "软保底估计已启用" : "仅硬保底";
     elements.useSoftPity.checked = input.useSoftPity;
@@ -247,6 +333,7 @@
     };
     appState.activeSession = session;
     appState.lastInput = input;
+    resetTenPullMarks();
     saveState();
     renderSession();
   }
@@ -306,26 +393,62 @@
     }
   }
 
-  function parsePositionsFrom(raw) {
-    if (!raw) return [];
-    return raw.split(/[,\s，、]+/)
-      .filter(Boolean)
-      .map((value) => Number.parseInt(value, 10))
-      .filter((value) => Number.isInteger(value) && value >= 1 && value <= 10)
-      .sort((a, b) => a - b);
-  }
-
   function uniqueSorted(values) {
     return [...new Set(values)].sort((a, b) => a - b);
   }
 
   function getPositionSets() {
     const banner = elements.tenPullBanner.value;
-    const limited = uniqueSorted(parsePositionsFrom(elements.limitedFiveStarPositions.value.trim()));
-    const off = banner === "character"
-      ? uniqueSorted(parsePositionsFrom(elements.offFiveStarPositions.value.trim()))
-      : [];
+    const limited = [];
+    const off = [];
+    tenPullMarks.forEach((mark, index) => {
+      if (mark === "up") limited.push(index + 1);
+      if (banner === "character" && mark === "off") off.push(index + 1);
+    });
     return { limited, off };
+  }
+
+  function getNextSlotMark(current, banner) {
+    if (banner === "weapon") return current === "up" ? null : "up";
+    if (current === null) return "up";
+    if (current === "up") return "off";
+    return null;
+  }
+
+  function describeSlot(mark, banner) {
+    if (mark === "up") return banner === "weapon" ? "限定武器" : "限定";
+    if (mark === "off") return "非限定";
+    return "非五星";
+  }
+
+  function renderTenPullGrid() {
+    const banner = elements.tenPullBanner.value;
+    elements.tenPullGrid.innerHTML = "";
+    tenPullMarks = tenPullMarks.map((mark) => (banner === "weapon" && mark === "off" ? null : mark));
+
+    for (let index = 0; index < 10; index += 1) {
+      const mark = tenPullMarks[index];
+      const slot = document.createElement("button");
+      slot.type = "button";
+      slot.className = "pull-slot";
+      slot.dataset.position = String(index + 1);
+      if (mark === "up") slot.classList.add("is-up");
+      if (mark === "off") slot.classList.add("is-off");
+      slot.setAttribute("aria-label", `第 ${index + 1} 抽，${describeSlot(mark, banner)}`);
+      slot.innerHTML = `<strong>${describeSlot(mark, banner)}</strong><span>第 ${index + 1} 抽</span>`;
+      slot.addEventListener("click", () => {
+        tenPullMarks[index] = getNextSlotMark(tenPullMarks[index], banner);
+        renderTenPullGrid();
+        buildGoldRows();
+      });
+      elements.tenPullGrid.appendChild(slot);
+    }
+  }
+
+  function resetTenPullMarks() {
+    tenPullMarks = Array(10).fill(null);
+    renderTenPullGrid();
+    buildGoldRows();
   }
 
   function buildGoldRows() {
@@ -333,12 +456,11 @@
     const { limited, off } = getPositionSets();
     const positions = uniqueSorted([...limited, ...off]);
     elements.goldResults.innerHTML = "";
-    elements.offFiveStarField.hidden = banner === "weapon";
 
     if (positions.length === 0) {
       const note = document.createElement("p");
       note.className = "muted-note";
-      note.textContent = "暂无五星结果项。";
+      note.textContent = "暂无五星标记。";
       elements.goldResults.appendChild(note);
       return;
     }
@@ -413,10 +535,12 @@
     appState.lastInput = nextInput;
     appState.activeSession = null;
     writeInput(nextInput);
+    resetTenPullMarks();
     saveState();
     scheduleCalculateAndRender(nextInput, { characterCopies: 0, weaponCopies: 0 });
     renderSession();
     renderFutureModule();
+    showToast("抽卡会话已结束，数据已更新");
   }
 
   function resetFutureResults() {
@@ -507,11 +631,34 @@
     event.preventDefault();
     const input = readInput();
     startSession(input);
+    showToast("已根据基础数据开启本轮规划");
   });
 
-  elements.tenPullBanner.addEventListener("change", buildGoldRows);
-  elements.limitedFiveStarPositions.addEventListener("input", buildGoldRows);
-  elements.offFiveStarPositions.addEventListener("input", buildGoldRows);
+  document.querySelectorAll(".segmented-control button").forEach((button) => {
+    button.addEventListener("click", () => {
+      const control = button.closest(".segmented-control").dataset.control;
+      elements[control].value = button.dataset.value;
+      scheduleBasicPreview();
+    });
+  });
+
+  [
+    elements.charPity,
+    elements.weaponPity,
+    elements.astrites,
+    elements.charWaves,
+    elements.weaponWaves,
+    elements.charGuaranteed
+  ].forEach((control) => {
+    control.addEventListener("input", scheduleBasicPreview);
+    control.addEventListener("change", scheduleBasicPreview);
+  });
+
+  elements.tenPullBanner.addEventListener("change", () => {
+    tenPullMarks = tenPullMarks.map((mark) => (elements.tenPullBanner.value === "weapon" && mark === "off" ? null : mark));
+    renderTenPullGrid();
+    buildGoldRows();
+  });
   elements.useSoftPity.addEventListener("change", () => updateSoftPity(elements.useSoftPity.checked));
 
   elements.tenPullForm.addEventListener("submit", (event) => {
@@ -551,11 +698,10 @@
       }
     ];
     appState.activeSession = nextSession;
-    elements.limitedFiveStarPositions.value = "";
-    elements.offFiveStarPositions.value = "";
     saveState();
-    buildGoldRows();
+    resetTenPullMarks();
     renderSession();
+    showToast("已记录本次十连");
   });
 
   elements.finishSession.addEventListener("click", finishSession);
@@ -582,6 +728,7 @@
     appState.activeSession.records = records;
     saveState();
     renderSession();
+    showToast("已回溯上一次十连");
   });
 
   elements.undoAllTenPulls.addEventListener("click", () => {
@@ -591,6 +738,7 @@
     appState.activeSession.records = [];
     saveState();
     renderSession();
+    showToast("已回溯本次所有记录");
   });
 
   function updateSoftPity(enabled) {
@@ -606,6 +754,7 @@
       };
       saveState();
       renderSession();
+      showToast(enabled ? "已启用软保底估计" : "已切换为仅硬保底");
       return;
     }
 
@@ -614,6 +763,7 @@
     appState.lastInput = input;
     saveState();
     scheduleCalculateAndRender(input, { characterCopies: 0, weaponCopies: 0 });
+    showToast(enabled ? "已启用软保底估计" : "已切换为仅硬保底");
   }
 
   elements.resetInputs.addEventListener("click", () => {
@@ -624,13 +774,16 @@
       useSoftPity: true
     });
     scheduleCalculateAndRender(readInput(), { characterCopies: 0, weaponCopies: 0 });
+    showToast("基础输入已重置");
   });
 
   elements.resetSession.addEventListener("click", () => {
     appState.activeSession = null;
+    resetTenPullMarks();
     saveState();
     renderSession();
     renderFutureModule();
+    showToast("本轮会话已重置");
   });
 
   elements.clearStorage.addEventListener("click", () => {
@@ -644,9 +797,11 @@
       resources: { astrites: 0, characterWaves: 0, weaponWaves: 0 },
       useSoftPity: true
     });
+    resetTenPullMarks();
     scheduleCalculateAndRender(readInput(), { characterCopies: 0, weaponCopies: 0 });
     renderSession();
     renderFutureModule();
+    showToast("本地数据已清除");
   });
 
   writeInput(appState.lastInput || {
@@ -660,5 +815,6 @@
     scheduleCalculateAndRender(readInput(), { characterCopies: 0, weaponCopies: 0 });
   }
   renderFutureModule();
+  renderTenPullGrid();
   buildGoldRows();
 })();
