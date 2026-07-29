@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>鸣潮限定池资源规划</title>
+    <link rel="stylesheet" href="src/styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="topbar">
+        <div>
+          <h1>鸣潮限定池资源规划</h1>
+        </div>
+        <div class="status-pill" id="saveStatus">本地保存已启用</div>
+      </section>
+
+      <section class="workspace">
+        <form class="panel input-panel" id="plannerForm">
+          <div class="panel-heading">
+            <h2>基础输入</h2>
+            <button type="button" class="ghost-button" id="resetInputs">重置输入</button>
+          </div>
+
+          <div class="form-grid">
+            <label>
+              角色目标
+              <select id="targetRank" name="targetRank">
+                <option value="0">0 命：1 个限定角色</option>
+                <option value="1">1 命：2 个限定角色</option>
+                <option value="2">2 命：3 个限定角色</option>
+                <option value="3">3 命：4 个限定角色</option>
+                <option value="4">4 命：5 个限定角色</option>
+                <option value="5">5 命：6 个限定角色</option>
+                <option value="6">6 命：7 个限定角色</option>
+              </select>
+            </label>
+
+            <label>
+              武器目标
+              <select id="weaponTarget" name="weaponTarget">
+                <option value="0">0 把限定武器</option>
+                <option value="1">1 把限定武器</option>
+                <option value="2">2 把限定武器</option>
+                <option value="3">3 把限定武器</option>
+                <option value="4">4 把限定武器</option>
+                <option value="5">5 把限定武器</option>
+              </select>
+            </label>
+
+            <label>
+              角色池垫数
+              <input id="charPity" name="charPity" type="number" min="0" max="79" value="0">
+            </label>
+
+            <label>
+              武器池垫数
+              <input id="weaponPity" name="weaponPity" type="number" min="0" max="79" value="0">
+            </label>
+
+            <label class="toggle-row">
+              <input id="charGuaranteed" name="charGuaranteed" type="checkbox">
+              <span>角色池已触发小保底</span>
+            </label>
+
+            <label class="toggle-row">
+              <input id="useSoftPity" name="useSoftPity" type="checkbox" checked>
+              <span>
+                启用软保底估计
+                <small>社区统计，概率可能虚高</small>
+              </span>
+            </label>
+
+            <label>
+              星声
+              <input id="astrites" name="astrites" type="number" min="0" step="1" value="0">
+            </label>
+
+            <label>
+              浮金波纹
+              <input id="charWaves" name="charWaves" type="number" min="0" step="1" value="0">
+            </label>
+
+            <label>
+              铸潮波纹
+              <input id="weaponWaves" name="weaponWaves" type="number" min="0" step="1" value="0">
+            </label>
+          </div>
+
+          <div class="button-row">
+            <button type="submit" class="primary-button">计算概率</button>
+            <button type="button" class="secondary-button" id="clearStorage">清除本地数据</button>
+          </div>
+        </form>
+
+        <section class="panel results-panel" aria-live="polite">
+          <div class="panel-heading">
+            <h2>规划结果</h2>
+            <span id="modelBadge" class="small-badge">软保底估计已启用</span>
+          </div>
+
+          <div class="metric-grid">
+            <div class="metric">
+              <span>完成概率</span>
+              <strong id="completionProbability">--</strong>
+            </div>
+            <div class="metric">
+              <span>当前可用抽数</span>
+              <strong id="availablePulls">--</strong>
+            </div>
+            <div class="metric">
+              <span>硬保底还差</span>
+              <strong id="missingPulls">--</strong>
+            </div>
+            <div class="metric">
+              <span>折算星声</span>
+              <strong id="missingAstrites">--</strong>
+            </div>
+          </div>
+
+          <div class="details-grid">
+            <div>
+              <h3>抽取顺序</h3>
+              <p id="pullSequence">输入后生成</p>
+            </div>
+            <div>
+              <h3>硬保底需求</h3>
+              <p id="hardPityBreakdown">输入后生成</p>
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <section class="session-layout">
+        <section class="panel session-panel locked" id="sessionPanel">
+          <div class="panel-heading">
+            <h2>十连动态记录</h2>
+            <span id="sessionStatus" class="small-badge">基础计算后解锁</span>
+          </div>
+
+          <div class="session-state" id="sessionState">暂无进行中的抽卡会话。</div>
+
+          <form id="tenPullForm" class="ten-pull-form">
+            <div class="form-grid compact">
+              <label>
+                本次十连池子
+                <select id="tenPullBanner">
+                  <option value="character">限定角色池</option>
+                  <option value="weapon">限定武器池</option>
+                </select>
+              </label>
+              <label>
+                限定五星位置
+                <input id="limitedFiveStarPositions" type="text" placeholder="例如 3,9；没有则留空">
+              </label>
+              <label id="offFiveStarField">
+                非限定五星位置
+                <input id="offFiveStarPositions" type="text" placeholder="仅角色池填写，例如 7">
+              </label>
+            </div>
+
+            <div class="gold-results" id="goldResults"></div>
+            <p class="ten-pull-note" id="tenPullNote">
+              未填写五星位置，将按无五星处理。角色池请分别填写限定五星和非限定五星；武器池仅有限定五星。
+            </p>
+
+            <div class="button-row">
+              <button type="submit" class="primary-button">记录十连</button>
+              <button type="button" class="secondary-button" id="finishSession">抽卡结束</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="panel history-panel">
+          <div class="panel-heading">
+            <h2>本轮历史</h2>
+            <div class="history-actions">
+              <button type="button" class="ghost-button" id="undoLastTenPull">回溯上一次十连</button>
+              <button type="button" class="ghost-button" id="undoAllTenPulls">回溯本次所有记录</button>
+              <button type="button" class="ghost-button" id="resetSession">重置本轮</button>
+            </div>
+          </div>
+          <ol id="historyList" class="history-list"></ol>
+        </section>
+      </section>
+
+      <section class="panel future-panel locked" id="futurePanel">
+        <div class="panel-heading">
+          <h2>未来抽卡估计</h2>
+          <span id="futureStatus" class="small-badge">抽卡结束后解锁</span>
+        </div>
+
+        <div class="future-locked-note" id="futureLockedNote">
+          至少完成并结束一次十连动态记录后，可基于更新后的资源和保底状态估算下个卡池。
+        </div>
+
+        <p class="future-scope-note">仅考虑日常和周常星声增长。</p>
+
+        <form id="futureForm" class="future-form">
+          <div class="form-grid future-grid">
+            <label>
+              当前日期
+              <input id="currentDate" type="text" readonly>
+            </label>
+            <label>
+              下个卡池开放时间
+              <input id="nextBannerDate" type="date">
+            </label>
+            <label class="toggle-row">
+              <input id="hasMonthlyPass" type="checkbox">
+              <span>拥有小月卡</span>
+            </label>
+          </div>
+
+          <div class="button-row">
+            <button type="submit" class="primary-button">估计未来目标</button>
+          </div>
+        </form>
+
+        <div class="future-results" id="futureResults">
+          <div class="metric">
+            <span>预计新增星声</span>
+            <strong id="futureGain">--</strong>
+          </div>
+          <div class="metric">
+            <span>开放时星声</span>
+            <strong id="futureAstrites">--</strong>
+          </div>
+          <div class="metric">
+            <span>最高 100% 目标</span>
+            <strong id="futureTarget">--</strong>
+          </div>
+          <div class="metric">
+            <span>多出星声</span>
+            <strong id="futureSurplus">--</strong>
+          </div>
+        </div>
+
+        <p class="future-note" id="futureNote">输入开放日期后生成估计。</p>
+      </section>
+    </main>
+
+    <script src="src/engine.js"></script>
+    <script src="src/app.js"></script>
+  </body>
+</html>

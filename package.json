@@ -1,0 +1,11 @@
+{
+  "name": "wuthering-waves-resource-planner",
+  "version": "0.1.0",
+  "private": true,
+  "description": "鸣潮限定角色池与武器池资源规划工具",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node tests/probability.test.js"
+  },
+  "devDependencies": {}
+}
