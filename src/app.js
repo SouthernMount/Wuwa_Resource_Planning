@@ -273,10 +273,8 @@
 
   function renderHardPityBreakdown(missing) {
     const items = [
-      ["角色还需", `${formatNumber(missing.characterDraws)} 抽`, "primary"],
-      ["武器还需", `${formatNumber(missing.weaponDraws)} 抽`, "weapon"],
-      ["角色缺口", `${formatNumber(missing.missingCharacter)} 抽`, "danger"],
-      ["武器缺口", `${formatNumber(missing.missingWeapon)} 抽`, "danger"]
+      ["角色池", `${formatNumber(missing.characterDraws)} 抽`, "primary"],
+      ["武器池", `${formatNumber(missing.weaponDraws)} 抽`, "weapon"]
     ];
     elements.hardPityBreakdown.innerHTML = "";
     for (const [label, value, tone] of items) {
@@ -325,7 +323,7 @@
     elements.missingPulls.textContent = "计算中...";
     elements.missingAstrites.textContent = "计算中...";
     elements.pullSequence.textContent = "正在计算抽取顺序...";
-    elements.hardPityBreakdown.textContent = "正在计算硬保底需求...";
+    elements.hardPityBreakdown.textContent = "正在计算吃满时完成计划还需消耗...";
     elements.modelBadge.textContent = "计算中";
     document.body.classList.add("is-calculating");
   }
