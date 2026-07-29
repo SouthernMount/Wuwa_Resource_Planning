@@ -182,7 +182,7 @@
               </div>
               <div>
                 <h3>硬保底需求</h3>
-                <p id="hardPityBreakdown">输入后生成</p>
+                <div class="hard-pity-breakdown" id="hardPityBreakdown">输入后生成</div>
               </div>
             </div>
           </section>
@@ -233,7 +233,6 @@
               <div class="history-actions">
                 <button type="button" class="ghost-button" id="undoLastTenPull">回溯上一次十连</button>
                 <button type="button" class="ghost-button" id="undoAllTenPulls">回溯本次所有记录</button>
-                <button type="button" class="ghost-button" id="resetSession">重置本轮</button>
               </div>
             </div>
             <ol id="historyList" class="history-list"></ol>
@@ -280,25 +279,28 @@
           </form>
 
           <div class="future-results" id="futureResults">
-            <div class="metric">
-              <span>预计新增星声</span>
-              <strong id="futureGain">--</strong>
-            </div>
-            <div class="metric">
-              <span>开放时星声</span>
-              <strong id="futureAstrites">--</strong>
-            </div>
-            <div class="metric">
+            <div class="future-goal-card">
               <span>最高 100% 目标</span>
               <strong id="futureTarget">--</strong>
+              <p>按硬保底、优先 0+1 和资源优先消耗规则估算</p>
             </div>
-            <div class="metric">
-              <span>多出星声</span>
-              <strong id="futureSurplus">--</strong>
+            <div class="future-metric-grid">
+              <div class="metric">
+                <span>预计新增星声</span>
+                <strong id="futureGain">--</strong>
+              </div>
+              <div class="metric">
+                <span>开放时星声</span>
+                <strong id="futureAstrites">--</strong>
+              </div>
+              <div class="metric">
+                <span>多出星声</span>
+                <strong id="futureSurplus">--</strong>
+              </div>
             </div>
           </div>
 
-          <p class="future-note" id="futureNote">输入开放日期后生成估计。</p>
+          <div class="future-note" id="futureNote">输入开放日期后生成估计。</div>
         </section>
       </main>
     </div>

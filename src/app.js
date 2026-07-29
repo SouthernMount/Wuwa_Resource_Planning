@@ -52,7 +52,6 @@
     resetInputs: document.getElementById("resetInputs"),
     undoLastTenPull: document.getElementById("undoLastTenPull"),
     undoAllTenPulls: document.getElementById("undoAllTenPulls"),
-    resetSession: document.getElementById("resetSession"),
     clearStorage: document.getElementById("clearStorage"),
     saveStatus: document.getElementById("saveStatus"),
     toastStack: document.getElementById("toastStack")
@@ -272,6 +271,48 @@
     });
   }
 
+  function renderHardPityBreakdown(missing) {
+    const items = [
+      ["角色还需", `${formatNumber(missing.characterDraws)} 抽`, "primary"],
+      ["武器还需", `${formatNumber(missing.weaponDraws)} 抽`, "weapon"],
+      ["角色缺口", `${formatNumber(missing.missingCharacter)} 抽`, "danger"],
+      ["武器缺口", `${formatNumber(missing.missingWeapon)} 抽`, "danger"]
+    ];
+    elements.hardPityBreakdown.innerHTML = "";
+    for (const [label, value, tone] of items) {
+      const item = document.createElement("span");
+      item.className = `hard-pity-item ${tone}`;
+      item.innerHTML = `<small>${label}</small><strong>${value}</strong>`;
+      elements.hardPityBreakdown.appendChild(item);
+    }
+  }
+
+  function renderFutureNote({ currentIso, nextIso, income, estimate, probability }) {
+    elements.futureNote.innerHTML = "";
+    const summary = document.createElement("div");
+    summary.className = "future-note-summary";
+    summary.innerHTML =
+      `<span>估算区间</span><strong>${currentIso || "--"} 到 ${nextIso || "--"}</strong>` +
+      `<span>累计天数</span><strong>${formatNumber(income.days)} 天</strong>` +
+      `<span>周一数量</span><strong>${formatNumber(income.mondayCount)} 个</strong>`;
+    elements.futureNote.appendChild(summary);
+
+    const detail = document.createElement("div");
+    detail.className = "future-note-detail";
+    if (estimate && estimate.target) {
+      detail.innerHTML =
+        `<span>计算结论</span>` +
+        `<strong>100% 可完成最高目标 ${describeGoal(estimate.target)}</strong>` +
+        `<p>按硬保底和优先 0+1 原则，结余浮金 ${formatNumber(estimate.resources.characterWaves)}，铸潮 ${formatNumber(estimate.resources.weaponWaves)}。</p>`;
+    } else {
+      detail.innerHTML =
+        `<span>计算结论</span>` +
+        `<strong>未达 0+0 保底</strong>` +
+        `<p>当前资源无法 100% 抽到至少一个限定角色；抽到一个限定角色的概率为 ${formatPercent(probability)}。</p>`;
+    }
+    elements.futureNote.appendChild(detail);
+  }
+
   function setPlanningLoading() {
     elements.completionProbability.textContent = "计算中...";
     elements.availablePulls.textContent = "计算中...";
@@ -297,7 +338,7 @@
     elements.missingPulls.textContent = `${formatNumber(missing.missingTotal)} 抽`;
     elements.missingAstrites.textContent = `${formatNumber(missing.missingAstrites)} 星声`;
     renderSequence(missing.sequence);
-    elements.hardPityBreakdown.textContent = `硬保底最多还需角色 ${missing.characterDraws} 抽、武器 ${missing.weaponDraws} 抽；当前资源缺口为角色 ${missing.missingCharacter} 抽、武器 ${missing.missingWeapon} 抽。`;
+    renderHardPityBreakdown(missing);
     elements.modelBadge.textContent = input.useSoftPity ? "软保底估计已启用" : "仅硬保底";
     elements.useSoftPity.checked = input.useSoftPity;
 
@@ -343,12 +384,14 @@
     if (!session) {
       elements.sessionPanel.classList.add("locked");
       elements.sessionStatus.textContent = "基础计算后解锁";
+      elements.sessionState.classList.add("empty-state");
       elements.sessionState.textContent = "暂无进行中的抽卡会话。";
       renderHistory([]);
       return;
     }
 
     elements.sessionPanel.classList.remove("locked");
+    elements.sessionState.classList.remove("empty-state");
     elements.sessionStatus.textContent = `进行中：${describeGoal(session.goal)}`;
     const input = {
       goal: session.goal,
@@ -356,25 +399,36 @@
       resources: session.resources,
       useSoftPity: session.useSoftPity
     };
-    elements.sessionState.textContent =
-      `已获得角色 ${session.progress.characterCopies}/${session.goal.characterRank + 1}，武器 ${session.progress.weaponCopies}/${session.goal.weaponCount}；` +
-      `角色垫数 ${session.bannerState.characterPity}，武器垫数 ${session.bannerState.weaponPity}，` +
-      `角色池${session.bannerState.characterGuaranteed ? "已触发小保底" : "未触发小保底"}；` +
-      `剩余星声 ${session.resources.astrites}，浮金 ${session.resources.characterWaves}，铸潮 ${session.resources.weaponWaves}；` +
-      `继续抽取完成概率正在计算。`;
+    renderSessionState(session, "计算中");
     scheduleCalculateAndRender(input, session.progress, (result) => {
       if (!appState.activeSession || appState.activeSession.id !== session.id) return;
-      elements.sessionState.textContent =
-        `已获得角色 ${session.progress.characterCopies}/${session.goal.characterRank + 1}，武器 ${session.progress.weaponCopies}/${session.goal.weaponCount}；` +
-        `角色垫数 ${session.bannerState.characterPity}，武器垫数 ${session.bannerState.weaponPity}，` +
-        `角色池${session.bannerState.characterGuaranteed ? "已触发小保底" : "未触发小保底"}；` +
-        `剩余星声 ${session.resources.astrites}，浮金 ${session.resources.characterWaves}，铸潮 ${session.resources.weaponWaves}；` +
-        `继续抽取完成概率 ${formatPercent(result.probability)}。`;
+      renderSessionState(session, formatPercent(result.probability));
     });
-    renderHistory(session.records);
+    renderHistory(session.records, session.goal);
   }
 
-  function renderHistory(records) {
+  function renderSessionState(session, probabilityText) {
+    const items = [
+      ["角色进度", `${session.progress.characterCopies}/${session.goal.characterRank + 1}`],
+      ["武器进度", `${session.progress.weaponCopies}/${session.goal.weaponCount}`],
+      ["角色垫数", `${session.bannerState.characterPity} 抽`],
+      ["武器垫数", `${session.bannerState.weaponPity} 抽`],
+      ["角色小保底", session.bannerState.characterGuaranteed ? "已触发" : "未触发"],
+      ["剩余星声", formatNumber(session.resources.astrites)],
+      ["浮金波纹", formatNumber(session.resources.characterWaves)],
+      ["铸潮波纹", formatNumber(session.resources.weaponWaves)],
+      ["继续完成概率", probabilityText]
+    ];
+    elements.sessionState.innerHTML = "";
+    for (const [label, value] of items) {
+      const item = document.createElement("div");
+      item.className = "session-state-item";
+      item.innerHTML = `<span>${label}</span><strong>${value}</strong>`;
+      elements.sessionState.appendChild(item);
+    }
+  }
+
+  function renderHistory(records, goal) {
     elements.historyList.innerHTML = "";
     const hasRecords = Boolean(records && records.length > 0);
     elements.undoLastTenPull.disabled = !hasRecords;
@@ -388,7 +442,42 @@
 
     for (const record of records) {
       const item = document.createElement("li");
-      item.textContent = record.summary;
+      if (!record.results || !record.afterSnapshot || !goal) {
+        item.textContent = record.summary || "记录无法解析。";
+        elements.historyList.appendChild(item);
+        continue;
+      }
+
+      const bannerName = record.banner === "character" ? "角色池" : "武器池";
+      const header = document.createElement("div");
+      header.className = "history-entry-title";
+      header.textContent = `${bannerName}十连`;
+
+      const resultLine = document.createElement("div");
+      resultLine.className = "history-result-line";
+      if (record.results.length === 0) {
+        const empty = document.createElement("span");
+        empty.className = "history-gold empty";
+        empty.textContent = "无五星";
+        resultLine.appendChild(empty);
+      } else {
+        for (const result of record.results) {
+          const badge = document.createElement("span");
+          badge.className = `history-gold ${result.result === "up" ? "is-up" : "is-off"}`;
+          badge.textContent = `第${result.position}抽${result.result === "up" ? "UP" : "歪"}`;
+          resultLine.appendChild(badge);
+        }
+      }
+
+      const progress = document.createElement("div");
+      progress.className = "history-progress";
+      progress.textContent =
+        `当前角色 ${record.afterSnapshot.progress.characterCopies}/${goal.characterRank + 1}，` +
+        `武器 ${record.afterSnapshot.progress.weaponCopies}/${goal.weaponCount}。`;
+
+      item.appendChild(header);
+      item.appendChild(resultLine);
+      item.appendChild(progress);
       elements.historyList.appendChild(item);
     }
   }
@@ -571,6 +660,7 @@
 
     if (!hasEndedSession) {
       resetFutureResults();
+      elements.futureNote.innerHTML = "";
       elements.futureNote.textContent = "至少完成并结束一次十连动态记录后，可基于更新后的资源和保底状态估算下个卡池。";
       return;
     }
@@ -601,10 +691,7 @@
     if (estimate.target) {
       elements.futureTarget.textContent = describeGoal(estimate.target);
       elements.futureSurplus.textContent = `${formatNumber(estimate.resources.astrites)} 星声`;
-      elements.futureNote.textContent =
-        `从 ${currentIso} 到 ${nextIso} 共计 ${income.days} 天，包含 ${income.mondayCount} 个周一。` +
-        `按硬保底和优先0+1原则，100%可完成最高目标 ${describeGoal(estimate.target)}；` +
-        `结余浮金 ${estimate.resources.characterWaves}，铸潮 ${estimate.resources.weaponWaves}。`;
+      renderFutureNote({ currentIso, nextIso, income, estimate });
     } else {
       const probability = engine.calculateCompletionProbability({
         goal: { characterRank: 0, weaponCount: 0 },
@@ -615,9 +702,7 @@
       });
       elements.futureTarget.textContent = "未达 0+0 保底";
       elements.futureSurplus.textContent = `${formatNumber(projectedResources.astrites)} 星声`;
-      elements.futureNote.textContent =
-        `从 ${currentIso} 到 ${nextIso} 共计 ${income.days} 天，包含 ${income.mondayCount} 个周一。` +
-        `当前资源无法 100% 抽到至少一个限定角色；抽到一个限定角色的概率为 ${formatPercent(probability)}。`;
+      renderFutureNote({ currentIso, nextIso, income, probability });
     }
 
     appState.futureInput = {
@@ -775,15 +860,6 @@
     });
     scheduleCalculateAndRender(readInput(), { characterCopies: 0, weaponCopies: 0 });
     showToast("基础输入已重置");
-  });
-
-  elements.resetSession.addEventListener("click", () => {
-    appState.activeSession = null;
-    resetTenPullMarks();
-    saveState();
-    renderSession();
-    renderFutureModule();
-    showToast("本轮会话已重置");
   });
 
   elements.clearStorage.addEventListener("click", () => {
