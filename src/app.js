@@ -178,6 +178,10 @@
     return new Intl.NumberFormat("zh-CN").format(value);
   }
 
+  function currencyIconMarkup(type) {
+    return `<i class="currency-icon icon-${type}" aria-hidden="true"></i>`;
+  }
+
   function describeGoal(goal) {
     return `${goal.characterRank}+${goal.weaponCount}`;
   }
@@ -307,7 +311,7 @@
       detail.innerHTML =
         `<span>计算结论</span>` +
         `<strong>100% 可完成最高目标 ${describeGoal(estimate.target)}</strong>` +
-        `<p>按硬保底和优先 0+1 原则，结余浮金 ${formatNumber(estimate.resources.characterWaves)}，铸潮 ${formatNumber(estimate.resources.weaponWaves)}。</p>`;
+        `<p>按硬保底和优先 0+1 原则，结余${currencyIconMarkup("radiant")}浮金 ${formatNumber(estimate.resources.characterWaves)}，${currencyIconMarkup("forging")}铸潮 ${formatNumber(estimate.resources.weaponWaves)}。</p>`;
     } else {
       detail.innerHTML =
         `<span>计算结论</span>` +
@@ -413,21 +417,22 @@
 
   function renderSessionState(session, probabilityText) {
     const items = [
-      ["角色进度", `${session.progress.characterCopies}/${session.goal.characterRank + 1}`],
-      ["武器进度", `${session.progress.weaponCopies}/${session.goal.weaponCount}`],
-      ["角色垫数", `${session.bannerState.characterPity} 抽`],
-      ["武器垫数", `${session.bannerState.weaponPity} 抽`],
-      ["角色小保底", session.bannerState.characterGuaranteed ? "已触发" : "未触发"],
-      ["剩余星声", formatNumber(session.resources.astrites)],
-      ["浮金波纹", formatNumber(session.resources.characterWaves)],
-      ["铸潮波纹", formatNumber(session.resources.weaponWaves)],
-      ["继续完成概率", probabilityText]
+      ["角色进度", `${session.progress.characterCopies}/${session.goal.characterRank + 1}`, "progress"],
+      ["武器进度", `${session.progress.weaponCopies}/${session.goal.weaponCount}`, "progress"],
+      ["角色垫数", `${session.bannerState.characterPity} 抽`, "pity"],
+      ["武器垫数", `${session.bannerState.weaponPity} 抽`, "pity"],
+      ["角色小保底", session.bannerState.characterGuaranteed ? "已触发" : "未触发", "guarantee"],
+      ["剩余星声", formatNumber(session.resources.astrites), "astrite"],
+      ["浮金波纹", formatNumber(session.resources.characterWaves), "radiant"],
+      ["铸潮波纹", formatNumber(session.resources.weaponWaves), "forging"],
+      ["继续完成概率", probabilityText, "probability"]
     ];
     elements.sessionState.innerHTML = "";
-    for (const [label, value] of items) {
+    for (const [label, value, tone] of items) {
       const item = document.createElement("div");
-      item.className = "session-state-item";
-      item.innerHTML = `<span>${label}</span><strong>${value}</strong>`;
+      item.className = `session-state-item is-${tone}`;
+      const icon = ["astrite", "radiant", "forging"].includes(tone) ? currencyIconMarkup(tone) : "";
+      item.innerHTML = `<span>${icon}${label}</span><strong>${value}</strong>`;
       elements.sessionState.appendChild(item);
     }
   }

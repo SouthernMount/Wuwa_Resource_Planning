@@ -123,18 +123,18 @@
                 </span>
               </label>
 
-              <label class="resource-field">
-                <span>星声</span>
+              <label class="resource-field resource-astrite">
+                <span class="resource-label"><i class="currency-icon icon-astrite" aria-hidden="true"></i>星声</span>
                 <input id="astrites" name="astrites" type="number" min="0" step="1" value="0">
               </label>
 
-              <label class="resource-field">
-                <span>浮金波纹</span>
+              <label class="resource-field resource-radiant">
+                <span class="resource-label"><i class="currency-icon icon-radiant" aria-hidden="true"></i>浮金波纹</span>
                 <input id="charWaves" name="charWaves" type="number" min="0" step="1" value="0">
               </label>
 
-              <label class="resource-field">
-                <span>铸潮波纹</span>
+              <label class="resource-field resource-forging">
+                <span class="resource-label"><i class="currency-icon icon-forging" aria-hidden="true"></i>铸潮波纹</span>
                 <input id="weaponWaves" name="weaponWaves" type="number" min="0" step="1" value="0">
               </label>
             </div>
@@ -158,19 +158,20 @@
               <span>完成概率</span>
               <strong id="completionProbability">--</strong>
               <p>基于当前资源、垫数和目标的继续抽取结果</p>
+              <i class="soundwave-mark" aria-hidden="true"></i>
             </div>
 
             <div class="metric-grid">
-              <div class="metric">
-                <span>当前可用抽数</span>
+              <div class="metric metric-pulls">
+                <span class="metric-label"><i class="metric-mark" aria-hidden="true"></i>当前可用抽数</span>
                 <strong id="availablePulls">--</strong>
               </div>
-              <div class="metric">
-                <span>距离100%还差</span>
+              <div class="metric metric-gap">
+                <span class="metric-label"><i class="metric-mark" aria-hidden="true"></i>距离100%还差</span>
                 <strong id="missingPulls">--</strong>
               </div>
-              <div class="metric">
-                <span>差距抽数折算星声</span>
+              <div class="metric metric-astrite">
+                <span class="metric-label"><i class="currency-icon icon-astrite" aria-hidden="true"></i>差距抽数折算星声</span>
                 <strong id="missingAstrites">--</strong>
               </div>
             </div>
@@ -283,18 +284,19 @@
               <span>最高 100% 目标</span>
               <strong id="futureTarget">--</strong>
               <p>按硬保底、优先 0+1 和资源优先消耗规则估算</p>
+              <i class="soundwave-mark" aria-hidden="true"></i>
             </div>
             <div class="future-metric-grid">
-              <div class="metric">
-                <span>预计新增星声</span>
+              <div class="metric metric-astrite">
+                <span class="metric-label"><i class="currency-icon icon-astrite" aria-hidden="true"></i>预计新增星声</span>
                 <strong id="futureGain">--</strong>
               </div>
-              <div class="metric">
-                <span>开放时星声</span>
+              <div class="metric metric-astrite">
+                <span class="metric-label"><i class="currency-icon icon-astrite" aria-hidden="true"></i>开放时星声</span>
                 <strong id="futureAstrites">--</strong>
               </div>
-              <div class="metric">
-                <span>多出星声</span>
+              <div class="metric metric-astrite">
+                <span class="metric-label"><i class="currency-icon icon-astrite" aria-hidden="true"></i>多出星声</span>
                 <strong id="futureSurplus">--</strong>
               </div>
             </div>
