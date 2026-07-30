@@ -16,8 +16,8 @@
             <small>限定池工作台</small>
           </span>
         </a>
-        <nav class="nav-links">
-          <a href="#basicData">基础数据</a>
+        <nav class="nav-links" aria-label="规划区块">
+          <a href="#basicData" aria-current="location">基础数据</a>
           <a href="#planningResult">当前规划</a>
           <a href="#tenPullRecord">十连记录</a>
           <a href="#roundHistory">本轮历史</a>
@@ -107,21 +107,27 @@
                 <small id="weaponPityText">距离硬保底 80 抽</small>
               </label>
 
-              <label class="switch-card">
-                <input id="charGuaranteed" name="charGuaranteed" type="checkbox">
-                <span>
-                  <strong>角色池已触发小保底</strong>
-                  <small>下一次角色五星必定为限定角色</small>
-                </span>
-              </label>
+              <div class="switch-card">
+                <label class="switch-toggle" for="charGuaranteed">
+                  <input id="charGuaranteed" name="charGuaranteed" type="checkbox">
+                  <span><strong>角色池已触发小保底</strong></span>
+                </label>
+                <button type="button" class="info-button" aria-label="查看小保底说明" aria-describedby="charGuaranteedInfo" aria-expanded="false">
+                  <span aria-hidden="true">i</span>
+                  <span class="info-tooltip" id="charGuaranteedInfo" role="tooltip">上一次角色五星为非限定角色时，请开启；下一次角色五星必定为限定角色。</span>
+                </button>
+              </div>
 
-              <label class="switch-card">
-                <input id="useSoftPity" name="useSoftPity" type="checkbox" checked>
-                <span>
-                  <strong>启用软保底估计</strong>
-                  <small>社区统计，概率可能虚高</small>
-                </span>
-              </label>
+              <div class="switch-card">
+                <label class="switch-toggle" for="useSoftPity">
+                  <input id="useSoftPity" name="useSoftPity" type="checkbox" checked>
+                  <span><strong>启用软保底估计</strong></span>
+                </label>
+                <button type="button" class="info-button" aria-label="查看软保底估计说明" aria-describedby="softPityInfo" aria-expanded="false">
+                  <span aria-hidden="true">i</span>
+                  <span class="info-tooltip" id="softPityInfo" role="tooltip">依据社区统计构建的概率模型，实际概率可能偏高，仅供规划参考。</span>
+                </button>
+              </div>
 
               <label class="resource-field resource-astrite">
                 <span class="resource-label"><i class="currency-icon icon-astrite" aria-hidden="true"></i>星声</span>
@@ -217,6 +223,7 @@
               <p class="ten-pull-note" id="tenPullNote">
                 未标记五星位置，将按无五星处理。角色池点击抽位循环为限定五星、非限定五星、非五星；武器池仅可标记限定五星。
               </p>
+              <div class="ten-pull-validation" id="tenPullValidation" role="status" aria-live="polite" hidden></div>
 
               <div class="button-row">
                 <button type="submit" class="primary-button">记录十连</button>
@@ -236,6 +243,7 @@
                 <button type="button" class="ghost-button" id="undoAllTenPulls">回溯本次所有记录</button>
               </div>
             </div>
+            <div class="history-summary" id="historySummary" hidden></div>
             <ol id="historyList" class="history-list"></ol>
           </section>
         </section>
@@ -265,13 +273,15 @@
                 下个卡池开放时间
                 <input id="nextBannerDate" type="date">
               </label>
-              <label class="switch-card compact-switch">
-                <input id="hasMonthlyPass" type="checkbox">
-                <span>
-                  <strong>拥有小月卡</strong>
-                  <small>每日星声按 150 估算</small>
-                </span>
-              </label>
+              <div class="switch-card compact-switch">
+                <label class="switch-toggle" for="hasMonthlyPass">
+                  <input id="hasMonthlyPass" type="checkbox">
+                  <span>
+                    <strong>拥有小月卡</strong>
+                    <small>每日星声按 150 估算</small>
+                  </span>
+                </label>
+              </div>
             </div>
 
             <div class="button-row">

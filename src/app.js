@@ -35,8 +35,10 @@
     tenPullGrid: document.getElementById("tenPullGrid"),
     goldResults: document.getElementById("goldResults"),
     tenPullNote: document.getElementById("tenPullNote"),
+    tenPullValidation: document.getElementById("tenPullValidation"),
     finishSession: document.getElementById("finishSession"),
     historyList: document.getElementById("historyList"),
+    historySummary: document.getElementById("historySummary"),
     futurePanel: document.getElementById("futurePanel"),
     futureStatus: document.getElementById("futureStatus"),
     futureLockedNote: document.getElementById("futureLockedNote"),
@@ -443,11 +445,15 @@
     elements.undoLastTenPull.disabled = !hasRecords;
     elements.undoAllTenPulls.disabled = !hasRecords;
     if (!records || records.length === 0) {
+      elements.historySummary.hidden = true;
+      elements.historySummary.innerHTML = "";
       const item = document.createElement("li");
       item.textContent = "暂无记录。";
       elements.historyList.appendChild(item);
       return;
     }
+
+    renderHistorySummary(records);
 
     for (const record of records) {
       const item = document.createElement("li");
@@ -489,6 +495,48 @@
       item.appendChild(progress);
       elements.historyList.appendChild(item);
     }
+  }
+
+  function renderHistorySummary(records) {
+    const validRecords = records.filter((record) => record.beforeSnapshot && record.afterSnapshot);
+    if (validRecords.length === 0) {
+      elements.historySummary.hidden = true;
+      elements.historySummary.innerHTML = "";
+      return;
+    }
+    const firstRecord = validRecords[0];
+    const lastRecord = validRecords[validRecords.length - 1];
+    const goldResults = validRecords.flatMap((record) => record.results || []);
+    const upCount = goldResults.filter((result) => result.result === "up").length;
+    const offCount = goldResults.filter((result) => result.result === "off").length;
+    const initialResources = firstRecord.beforeSnapshot.resources;
+    const finalResources = lastRecord.afterSnapshot.resources;
+    const spent = {
+      astrites: Math.max(0, initialResources.astrites - finalResources.astrites),
+      characterWaves: Math.max(0, initialResources.characterWaves - finalResources.characterWaves),
+      weaponWaves: Math.max(0, initialResources.weaponWaves - finalResources.weaponWaves)
+    };
+
+    elements.historySummary.hidden = false;
+    elements.historySummary.innerHTML = `
+      <div class="history-summary-item">
+        <span>本轮记录</span>
+        <strong>${formatNumber(validRecords.length * 10)} 抽</strong>
+      </div>
+      <div class="history-summary-item">
+        <span>五星结果</span>
+        <strong>${formatNumber(goldResults.length)} 金</strong>
+        <small>限定 ${formatNumber(upCount)} · 非限定 ${formatNumber(offCount)}</small>
+      </div>
+      <div class="history-summary-item history-resource-summary">
+        <span>本轮消耗</span>
+        <div>
+          <small>${currencyIconMarkup("astrite")}星声 ${formatNumber(spent.astrites)}</small>
+          <small>${currencyIconMarkup("radiant")}浮金 ${formatNumber(spent.characterWaves)}</small>
+          <small>${currencyIconMarkup("forging")}铸潮 ${formatNumber(spent.weaponWaves)}</small>
+        </div>
+      </div>
+    `;
   }
 
   function uniqueSorted(values) {
@@ -538,6 +586,7 @@
         tenPullMarks[index] = getNextSlotMark(tenPullMarks[index], banner);
         renderTenPullGrid();
         buildGoldRows();
+        renderTenPullValidation();
       });
       elements.tenPullGrid.appendChild(slot);
     }
@@ -547,6 +596,7 @@
     tenPullMarks = Array(10).fill(null);
     renderTenPullGrid();
     buildGoldRows();
+    renderTenPullValidation();
   }
 
   function buildGoldRows() {
@@ -599,6 +649,27 @@
       positions: results.map((result) => result.position),
       results
     };
+  }
+
+  function renderTenPullValidation() {
+    const validation = elements.tenPullValidation;
+    if (!appState.activeSession) {
+      validation.hidden = true;
+      validation.textContent = "";
+      return true;
+    }
+
+    const record = collectTenPullRecord();
+    const result = record.ok ? engine.validateAndApplyTenPull(appState.activeSession, record) : record;
+    if (result.ok) {
+      validation.hidden = true;
+      validation.textContent = "";
+      return true;
+    }
+
+    validation.hidden = false;
+    validation.textContent = result.error;
+    return false;
   }
 
   function summarizeRecord(record, nextSession) {
@@ -752,6 +823,7 @@
     tenPullMarks = tenPullMarks.map((mark) => (elements.tenPullBanner.value === "weapon" && mark === "off" ? null : mark));
     renderTenPullGrid();
     buildGoldRows();
+    renderTenPullValidation();
   });
   elements.useSoftPity.addEventListener("change", () => updateSoftPity(elements.useSoftPity.checked));
 
@@ -761,7 +833,7 @@
 
     const record = collectTenPullRecord();
     if (!record.ok) {
-      alert(record.error);
+      renderTenPullValidation();
       return;
     }
     const beforeSnapshot = {
@@ -771,7 +843,7 @@
     };
     const result = engine.validateAndApplyTenPull(appState.activeSession, record);
     if (!result.ok) {
-      alert(result.error);
+      renderTenPullValidation();
       return;
     }
 
@@ -902,4 +974,62 @@
   renderFutureModule();
   renderTenPullGrid();
   buildGoldRows();
+  renderTenPullValidation();
+
+  function initializeNavigation() {
+    const links = [...document.querySelectorAll(".nav-links a[href^='#']")];
+    const sections = links
+      .map((link) => document.querySelector(link.getAttribute("href")))
+      .filter(Boolean);
+    if (links.length === 0 || sections.length === 0) return;
+
+    const setActiveLink = (id) => {
+      links.forEach((link) => {
+        const isActive = link.getAttribute("href") === `#${id}`;
+        link.classList.toggle("is-active", isActive);
+        if (isActive) link.setAttribute("aria-current", "location");
+        else link.removeAttribute("aria-current");
+      });
+    };
+
+    links.forEach((link) => {
+      link.addEventListener("click", () => setActiveLink(link.getAttribute("href").slice(1)));
+    });
+
+    const observer = new IntersectionObserver((entries) => {
+      const visible = entries
+        .filter((entry) => entry.isIntersecting)
+        .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+      if (visible) setActiveLink(visible.target.id);
+    }, { rootMargin: "-16% 0px -64% 0px", threshold: [0.05, 0.25, 0.5] });
+
+    sections.forEach((section) => observer.observe(section));
+    const initialId = window.location.hash.slice(1) || sections[0].id;
+    setActiveLink(initialId);
+  }
+
+  function initializeInfoButtons() {
+    const buttons = [...document.querySelectorAll(".info-button")];
+    const closeAll = (except) => {
+      buttons.forEach((button) => {
+        if (button === except) return;
+        button.classList.remove("is-open");
+        button.setAttribute("aria-expanded", "false");
+      });
+    };
+
+    buttons.forEach((button) => {
+      button.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const willOpen = !button.classList.contains("is-open");
+        closeAll(button);
+        button.classList.toggle("is-open", willOpen);
+        button.setAttribute("aria-expanded", willOpen ? "true" : "false");
+      });
+    });
+    document.addEventListener("click", () => closeAll());
+  }
+
+  initializeInfoButtons();
+  initializeNavigation();
 })();
