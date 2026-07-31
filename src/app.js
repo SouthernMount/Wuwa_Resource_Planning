@@ -32,7 +32,11 @@
     sessionState: document.getElementById("sessionState"),
     tenPullForm: document.getElementById("tenPullForm"),
     tenPullBanner: document.getElementById("tenPullBanner"),
-    tenPullGrid: document.getElementById("tenPullGrid"),
+    limitedGoldCount: document.getElementById("limitedGoldCount"),
+    offBannerGoldField: document.getElementById("offBannerGoldField"),
+    offBannerGoldCount: document.getElementById("offBannerGoldCount"),
+    lastFiveStar: document.getElementById("lastFiveStar"),
+    remainingPity: document.getElementById("remainingPity"),
     goldResults: document.getElementById("goldResults"),
     tenPullNote: document.getElementById("tenPullNote"),
     tenPullValidation: document.getElementById("tenPullValidation"),
@@ -56,13 +60,17 @@
     undoAllTenPulls: document.getElementById("undoAllTenPulls"),
     clearStorage: document.getElementById("clearStorage"),
     saveStatus: document.getElementById("saveStatus"),
-    toastStack: document.getElementById("toastStack")
+    toastStack: document.getElementById("toastStack"),
+    clearStorageDialog: document.getElementById("clearStorageDialog"),
+    cancelClearStorage: document.getElementById("cancelClearStorage"),
+    confirmClearStorage: document.getElementById("confirmClearStorage")
   };
 
   let appState = loadState();
   let planningRenderTaskId = 0;
-  let tenPullMarks = Array(10).fill(null);
   let previewTaskId = 0;
+  let hasShownStorageError = false;
+  let previouslyFocusedElement = null;
 
   function defaultState() {
     return {
@@ -83,8 +91,19 @@
   }
 
   function saveState() {
-    localStorage.setItem(storageKey, JSON.stringify(appState));
-    elements.saveStatus.textContent = "已保存到本地";
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(appState));
+      elements.saveStatus.textContent = "已保存到本地";
+      hasShownStorageError = false;
+      return true;
+    } catch (error) {
+      elements.saveStatus.textContent = "未能保存到本地";
+      if (!hasShownStorageError) {
+        showToast("浏览器无法保存本地数据，本次操作仍会继续");
+        hasShownStorageError = true;
+      }
+      return false;
+    }
   }
 
   function showToast(message) {
@@ -384,7 +403,7 @@
     };
     appState.activeSession = session;
     appState.lastInput = input;
-    resetTenPullMarks();
+    resetTenPullRecord();
     saveState();
     renderSession();
   }
@@ -457,26 +476,52 @@
 
     for (const record of records) {
       const item = document.createElement("li");
-      if (!record.results || !record.afterSnapshot || !goal) {
+      if (!record.afterSnapshot || !goal) {
         item.textContent = record.summary || "记录无法解析。";
         elements.historyList.appendChild(item);
         continue;
       }
 
       const bannerName = record.banner === "character" ? "角色池" : "武器池";
+      const recordResults = record.results || [];
       const header = document.createElement("div");
       header.className = "history-entry-title";
       header.textContent = `${bannerName}十连`;
 
       const resultLine = document.createElement("div");
       resultLine.className = "history-result-line";
-      if (record.results.length === 0) {
+      if (typeof record.upCount === "number") {
+        const totalGolds = record.upCount + record.offCount;
+        if (totalGolds === 0) {
+          const empty = document.createElement("span");
+          empty.className = "history-gold empty";
+          empty.textContent = "无五星";
+          resultLine.appendChild(empty);
+        } else {
+          if (record.upCount > 0) {
+            const upBadge = document.createElement("span");
+            upBadge.className = "history-gold is-up";
+            upBadge.textContent = `限定 UP × ${record.upCount}`;
+            resultLine.appendChild(upBadge);
+          }
+          if (record.offCount > 0) {
+            const offBadge = document.createElement("span");
+            offBadge.className = "history-gold is-off";
+            offBadge.textContent = `非限定 × ${record.offCount}`;
+            resultLine.appendChild(offBadge);
+          }
+          const lastBadge = document.createElement("span");
+          lastBadge.className = `history-gold ${record.lastResult === "off" ? "is-off" : "is-up"}`;
+          lastBadge.textContent = `最后一金：${record.lastResult === "off" ? "非限定" : "限定"}`;
+          resultLine.appendChild(lastBadge);
+        }
+      } else if (recordResults.length === 0) {
         const empty = document.createElement("span");
         empty.className = "history-gold empty";
         empty.textContent = "无五星";
         resultLine.appendChild(empty);
       } else {
-        for (const result of record.results) {
+        for (const result of recordResults) {
           const badge = document.createElement("span");
           badge.className = `history-gold ${result.result === "up" ? "is-up" : "is-off"}`;
           badge.textContent = `第${result.position}抽${result.result === "up" ? "UP" : "歪"}`;
@@ -488,7 +533,8 @@
       progress.className = "history-progress";
       progress.textContent =
         `当前角色 ${record.afterSnapshot.progress.characterCopies}/${goal.characterRank + 1}，` +
-        `武器 ${record.afterSnapshot.progress.weaponCopies}/${goal.weaponCount}。`;
+        `武器 ${record.afterSnapshot.progress.weaponCopies}/${goal.weaponCount}。` +
+        (typeof record.remainingPity === "number" ? ` 十连后距离五星保底 ${record.remainingPity} 抽。` : "");
 
       item.appendChild(header);
       item.appendChild(resultLine);
@@ -539,115 +585,80 @@
     `;
   }
 
-  function uniqueSorted(values) {
-    return [...new Set(values)].sort((a, b) => a - b);
-  }
+  function syncTenPullFields() {
+    const isWeapon = elements.tenPullBanner.value === "weapon";
+    elements.offBannerGoldField.hidden = isWeapon;
+    elements.offBannerGoldCount.disabled = isWeapon;
+    const offOption = elements.lastFiveStar.querySelector('option[value="off"]');
+    offOption.hidden = isWeapon;
+    offOption.disabled = isWeapon;
+    if (isWeapon) elements.offBannerGoldCount.value = 0;
 
-  function getPositionSets() {
-    const banner = elements.tenPullBanner.value;
-    const limited = [];
-    const off = [];
-    tenPullMarks.forEach((mark, index) => {
-      if (mark === "up") limited.push(index + 1);
-      if (banner === "character" && mark === "off") off.push(index + 1);
-    });
-    return { limited, off };
-  }
-
-  function getNextSlotMark(current, banner) {
-    if (banner === "weapon") return current === "up" ? null : "up";
-    if (current === null) return "up";
-    if (current === "up") return "off";
-    return null;
-  }
-
-  function describeSlot(mark, banner) {
-    if (mark === "up") return banner === "weapon" ? "限定武器" : "限定";
-    if (mark === "off") return "非限定";
-    return "非五星";
-  }
-
-  function renderTenPullGrid() {
-    const banner = elements.tenPullBanner.value;
-    elements.tenPullGrid.innerHTML = "";
-    tenPullMarks = tenPullMarks.map((mark) => (banner === "weapon" && mark === "off" ? null : mark));
-
-    for (let index = 0; index < 10; index += 1) {
-      const mark = tenPullMarks[index];
-      const slot = document.createElement("button");
-      slot.type = "button";
-      slot.className = "pull-slot";
-      slot.dataset.position = String(index + 1);
-      if (mark === "up") slot.classList.add("is-up");
-      if (mark === "off") slot.classList.add("is-off");
-      slot.setAttribute("aria-label", `第 ${index + 1} 抽，${describeSlot(mark, banner)}`);
-      slot.innerHTML = `<strong>${describeSlot(mark, banner)}</strong><span>第 ${index + 1} 抽</span>`;
-      slot.addEventListener("click", () => {
-        tenPullMarks[index] = getNextSlotMark(tenPullMarks[index], banner);
-        renderTenPullGrid();
-        buildGoldRows();
-        renderTenPullValidation();
-      });
-      elements.tenPullGrid.appendChild(slot);
+    const upCount = Math.max(0, Number(elements.limitedGoldCount.value) || 0);
+    const offCount = isWeapon ? 0 : Math.max(0, Number(elements.offBannerGoldCount.value) || 0);
+    const totalGolds = upCount + offCount;
+    if (totalGolds === 0) {
+      elements.lastFiveStar.value = "none";
+    } else if (isWeapon || offCount === 0) {
+      elements.lastFiveStar.value = "up";
+    } else if (upCount === 0) {
+      elements.lastFiveStar.value = "off";
+    } else if (elements.lastFiveStar.value === "none") {
+      elements.lastFiveStar.value = "up";
     }
   }
 
-  function resetTenPullMarks() {
-    tenPullMarks = Array(10).fill(null);
-    renderTenPullGrid();
+  function resetTenPullRecord() {
+    const session = appState.activeSession;
+    const banner = elements.tenPullBanner.value;
+    const startingPity = session
+      ? (banner === "character" ? session.bannerState.characterPity : session.bannerState.weaponPity)
+      : 0;
+    const noGoldPity = startingPity + 10;
+    elements.limitedGoldCount.value = 0;
+    elements.offBannerGoldCount.value = 0;
+    elements.lastFiveStar.value = "none";
+    elements.remainingPity.value = noGoldPity < engine.MAX_PITY ? engine.MAX_PITY - noGoldPity : engine.MAX_PITY;
+    syncTenPullFields();
     buildGoldRows();
     renderTenPullValidation();
   }
 
   function buildGoldRows() {
+    syncTenPullFields();
     const banner = elements.tenPullBanner.value;
-    const { limited, off } = getPositionSets();
-    const positions = uniqueSorted([...limited, ...off]);
+    const upCount = Math.max(0, Number(elements.limitedGoldCount.value) || 0);
+    const offCount = banner === "character" ? Math.max(0, Number(elements.offBannerGoldCount.value) || 0) : 0;
+    const totalGolds = upCount + offCount;
     elements.goldResults.innerHTML = "";
 
-    if (positions.length === 0) {
+    if (totalGolds === 0) {
       const note = document.createElement("p");
       note.className = "muted-note";
-      note.textContent = "暂无五星标记。";
+      note.textContent = "本次记录：无五星。";
       elements.goldResults.appendChild(note);
       return;
     }
 
-    for (const position of positions) {
-      const row = document.createElement("label");
-      row.className = "gold-row";
-      if (banner === "character") {
-        const result = limited.includes(position) ? "限定 UP" : "非限定";
-        row.innerHTML = `
-          <span>第 ${position} 抽五星</span>
-          <strong>${result}</strong>
-        `;
-      } else {
-        row.innerHTML = `<span>第 ${position} 抽五星</span><strong>限定武器 UP</strong>`;
-      }
-      elements.goldResults.appendChild(row);
-    }
+    const row = document.createElement("div");
+    row.className = "gold-row";
+    const detail = banner === "weapon"
+      ? `限定武器 × ${upCount}`
+      : `限定 UP × ${upCount}${offCount > 0 ? `，非限定 × ${offCount}` : ""}`;
+    const lastResult = elements.lastFiveStar.value === "off" ? "非限定" : "限定";
+    row.innerHTML = `<span>本次共 ${totalGolds} 个五星</span><strong>${detail} · 最后一金：${lastResult}</strong>`;
+    elements.goldResults.appendChild(row);
   }
 
   function collectTenPullRecord() {
     const banner = elements.tenPullBanner.value;
-    const { limited, off } = getPositionSets();
-    const overlap = limited.filter((position) => off.includes(position));
-    if (overlap.length > 0) {
-      return {
-        ok: false,
-        error: `第 ${overlap.join("、")} 抽不能同时标记为限定五星和非限定五星。`
-      };
-    }
-    const results = [
-      ...limited.map((position) => ({ position, result: "up" })),
-      ...off.map((position) => ({ position, result: "off" }))
-    ].sort((a, b) => a.position - b.position);
     return {
       ok: true,
       banner,
-      positions: results.map((result) => result.position),
-      results
+      upCount: Number(elements.limitedGoldCount.value),
+      offCount: banner === "character" ? Number(elements.offBannerGoldCount.value) : 0,
+      lastResult: elements.lastFiveStar.value,
+      remainingPity: Number(elements.remainingPity.value)
     };
   }
 
@@ -674,10 +685,11 @@
 
   function summarizeRecord(record, nextSession) {
     const bannerName = record.banner === "character" ? "角色池" : "武器池";
-    const goldText = record.positions.length === 0
+    const totalGolds = record.upCount + record.offCount;
+    const goldText = totalGolds === 0
       ? "无五星"
-      : record.results.map((result) => `第${result.position}抽${result.result === "up" ? "UP" : "歪"}`).join("、");
-    return `${bannerName}十连：${goldText}。当前角色 ${nextSession.progress.characterCopies}/${nextSession.goal.characterRank + 1}，武器 ${nextSession.progress.weaponCopies}/${nextSession.goal.weaponCount}。`;
+      : `限定 UP × ${record.upCount}${record.offCount > 0 ? `，非限定 × ${record.offCount}` : ""}，最后一金为${record.lastResult === "off" ? "非限定" : "限定"}`;
+    return `${bannerName}十连：${goldText}。十连后距离五星保底 ${record.remainingPity} 抽。当前角色 ${nextSession.progress.characterCopies}/${nextSession.goal.characterRank + 1}，武器 ${nextSession.progress.weaponCopies}/${nextSession.goal.weaponCount}。`;
   }
 
   function finishSession() {
@@ -704,7 +716,7 @@
     appState.lastInput = nextInput;
     appState.activeSession = null;
     writeInput(nextInput);
-    resetTenPullMarks();
+    resetTenPullRecord();
     saveState();
     scheduleCalculateAndRender(nextInput, { characterCopies: 0, weaponCopies: 0 });
     renderSession();
@@ -820,10 +832,22 @@
   });
 
   elements.tenPullBanner.addEventListener("change", () => {
-    tenPullMarks = tenPullMarks.map((mark) => (elements.tenPullBanner.value === "weapon" && mark === "off" ? null : mark));
-    renderTenPullGrid();
-    buildGoldRows();
-    renderTenPullValidation();
+    resetTenPullRecord();
+  });
+  [
+    elements.limitedGoldCount,
+    elements.offBannerGoldCount,
+    elements.lastFiveStar,
+    elements.remainingPity
+  ].forEach((control) => {
+    control.addEventListener("input", () => {
+      buildGoldRows();
+      renderTenPullValidation();
+    });
+    control.addEventListener("change", () => {
+      buildGoldRows();
+      renderTenPullValidation();
+    });
   });
   elements.useSoftPity.addEventListener("change", () => updateSoftPity(elements.useSoftPity.checked));
 
@@ -853,10 +877,15 @@
       resources: engine.normalizeResources(nextSession.resources),
       progress: engine.normalizeProgress(nextSession.progress)
     };
+    const results = [
+      ...Array.from({ length: record.upCount }, () => ({ result: "up" })),
+      ...Array.from({ length: record.offCount }, () => ({ result: "off" }))
+    ];
     nextSession.records = [
       ...appState.activeSession.records,
       {
         ...record,
+        results,
         beforeSnapshot,
         afterSnapshot,
         summary: summarizeRecord(record, nextSession),
@@ -865,7 +894,7 @@
     ];
     appState.activeSession = nextSession;
     saveState();
-    resetTenPullMarks();
+    resetTenPullRecord();
     renderSession();
     showToast("已记录本次十连");
   });
@@ -894,6 +923,7 @@
     appState.activeSession.records = records;
     saveState();
     renderSession();
+    resetTenPullRecord();
     showToast("已回溯上一次十连");
   });
 
@@ -904,6 +934,7 @@
     appState.activeSession.records = [];
     saveState();
     renderSession();
+    resetTenPullRecord();
     showToast("已回溯本次所有记录");
   });
 
@@ -943,22 +974,55 @@
     showToast("基础输入已重置");
   });
 
-  elements.clearStorage.addEventListener("click", () => {
-    if (!confirm("确认清除本地保存的数据？")) return;
-    localStorage.removeItem(storageKey);
+  function closeClearStorageDialog() {
+    elements.clearStorageDialog.hidden = true;
+    previouslyFocusedElement?.focus();
+    previouslyFocusedElement = null;
+  }
+
+  function clearLocalData() {
+    let clearedPersistedState = true;
+    try {
+      localStorage.removeItem(storageKey);
+      elements.saveStatus.textContent = "本地数据已清除";
+      hasShownStorageError = false;
+    } catch (error) {
+      clearedPersistedState = false;
+      elements.saveStatus.textContent = "未能清除本地数据";
+    }
     appState = defaultState();
-    elements.saveStatus.textContent = "本地数据已清除";
     writeInput({
       goal: { characterRank: 0, weaponCount: 1 },
       bannerState: { characterPity: 0, weaponPity: 0, characterGuaranteed: false },
       resources: { astrites: 0, characterWaves: 0, weaponWaves: 0 },
       useSoftPity: true
     });
-    resetTenPullMarks();
+    resetTenPullRecord();
     scheduleCalculateAndRender(readInput(), { characterCopies: 0, weaponCopies: 0 });
     renderSession();
     renderFutureModule();
-    showToast("本地数据已清除");
+    showToast(clearedPersistedState ? "本地数据已清除" : "已清空当前页面数据，但浏览器未能清除保存内容");
+  }
+
+  function openClearStorageDialog() {
+    previouslyFocusedElement = document.activeElement;
+    elements.clearStorageDialog.hidden = false;
+    window.requestAnimationFrame(() => elements.cancelClearStorage.focus());
+  }
+
+  elements.clearStorage.addEventListener("click", openClearStorageDialog);
+  elements.cancelClearStorage.addEventListener("click", closeClearStorageDialog);
+  elements.confirmClearStorage.addEventListener("click", () => {
+    closeClearStorageDialog();
+    clearLocalData();
+  });
+  elements.clearStorageDialog.addEventListener("click", (event) => {
+    if (event.target === elements.clearStorageDialog) closeClearStorageDialog();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !elements.clearStorageDialog.hidden) {
+      closeClearStorageDialog();
+    }
   });
 
   writeInput(appState.lastInput || {
@@ -972,9 +1036,7 @@
     scheduleCalculateAndRender(readInput(), { characterCopies: 0, weaponCopies: 0 });
   }
   renderFutureModule();
-  renderTenPullGrid();
-  buildGoldRows();
-  renderTenPullValidation();
+  resetTenPullRecord();
 
   function initializeNavigation() {
     const links = [...document.querySelectorAll(".nav-links a[href^='#']")];

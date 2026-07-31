@@ -6,7 +6,6 @@
   const ASTRITES_PER_PULL = 160;
   const fiveStarPmfCache = new Map();
   const characterCopyPmfCache = new Map();
-  const jointDistributionCache = new Map();
   const copyCountPmfCache = new Map();
 
   function clampInteger(value, min, max) {
@@ -154,55 +153,6 @@
     }
 
     return sequence;
-  }
-
-  function jointDrawDistribution(goal, bannerState, progress, useSoftPity) {
-    const normalizedGoal = normalizeGoal(goal);
-    const normalizedState = normalizeBannerState(bannerState);
-    const normalizedProgress = normalizeProgress(progress);
-    const cacheKey = [
-      normalizedGoal.characterRank,
-      normalizedGoal.weaponCount,
-      normalizedState.characterPity,
-      normalizedState.weaponPity,
-      normalizedState.characterGuaranteed ? 1 : 0,
-      normalizedProgress.characterCopies,
-      normalizedProgress.weaponCopies,
-      useSoftPity ? 1 : 0
-    ].join(":");
-    if (jointDistributionCache.has(cacheKey)) return jointDistributionCache.get(cacheKey);
-    const sequence = buildSuccessSequence(normalizedGoal, normalizedProgress);
-    let distribution = new Map([["0,0", 1]]);
-    let firstCharacterEvent = true;
-    let firstWeaponEvent = true;
-
-    for (const banner of sequence) {
-      const eventPmf = banner === "character"
-        ? characterCopyPmf(
-            firstCharacterEvent ? normalizedState.characterPity : 0,
-            firstCharacterEvent ? normalizedState.characterGuaranteed : false,
-            useSoftPity
-          )
-        : fiveStarDrawPmf(firstWeaponEvent ? normalizedState.weaponPity : 0, useSoftPity);
-
-      const nextDistribution = new Map();
-      for (const [key, probability] of distribution.entries()) {
-        const [charDraws, weaponDraws] = key.split(",").map(Number);
-        for (const [eventDraws, eventProbability] of eventPmf.entries()) {
-          const nextCharDraws = charDraws + (banner === "character" ? eventDraws : 0);
-          const nextWeaponDraws = weaponDraws + (banner === "weapon" ? eventDraws : 0);
-          const nextKey = `${nextCharDraws},${nextWeaponDraws}`;
-          nextDistribution.set(nextKey, (nextDistribution.get(nextKey) || 0) + probability * eventProbability);
-        }
-      }
-
-      distribution = nextDistribution;
-      if (banner === "character") firstCharacterEvent = false;
-      if (banner === "weapon") firstWeaponEvent = false;
-    }
-
-    jointDistributionCache.set(cacheKey, distribution);
-    return distribution;
   }
 
   function canPayDraws(charDraws, weaponDraws, resources) {
@@ -435,11 +385,64 @@
       progress: normalizeProgress(session.progress)
     };
     const banner = record.banner === "weapon" ? "weapon" : "character";
-    const positions = [...new Set((record.positions || []).map((value) => clampInteger(value, 1, 10)))]
-      .sort((a, b) => a - b);
-    const resultsByPosition = new Map();
-    for (const result of record.results || []) {
-      resultsByPosition.set(Number(result.position), result.result === "off" ? "off" : "up");
+    const rawUpCount = Number(record.upCount);
+    const rawOffCount = Number(record.offCount);
+    if (!Number.isInteger(rawUpCount) || rawUpCount < 0 || rawUpCount > 10 ||
+      !Number.isInteger(rawOffCount) || rawOffCount < 0 || rawOffCount > 10) {
+      return { ok: false, error: "五星数量请填写 0 到 10 的整数。", session };
+    }
+    const upCount = rawUpCount;
+    const offCount = banner === "character" ? rawOffCount : 0;
+    const totalGolds = upCount + offCount;
+    const lastResult = totalGolds === 0 ? "none" : (record.lastResult === "off" ? "off" : "up");
+    const remainingPity = Number(record.remainingPity);
+
+    if (!Number.isInteger(remainingPity) || remainingPity < 1 || remainingPity > MAX_PITY) {
+      return { ok: false, error: "请填写十连结束后卡池界面显示的距离五星保底抽数。", session };
+    }
+    if (totalGolds > 10) {
+      return { ok: false, error: "一次十连最多记录 10 个五星。", session };
+    }
+    if (totalGolds === 0 && record.lastResult !== "none") {
+      return { ok: false, error: "未记录五星时，请将最后一个五星设为“本次无五星”。", session };
+    }
+    if (totalGolds > 0 && record.lastResult === "none") {
+      return { ok: false, error: "记录五星后，请填写最后一个五星的类型。", session };
+    }
+    if (lastResult === "up" && upCount === 0) {
+      return { ok: false, error: "最后一个五星选择为限定，但限定五星数量为 0。", session };
+    }
+    if (lastResult === "off" && offCount === 0) {
+      return { ok: false, error: "最后一个五星选择为非限定，但非限定五星数量为 0。", session };
+    }
+    if (banner === "weapon" && (record.lastResult === "off" || Number(record.offCount) > 0)) {
+      return { ok: false, error: "限定武器池只会获得限定五星。", session };
+    }
+
+    const startingPity = banner === "character" ? state.bannerState.characterPity : state.bannerState.weaponPity;
+    const finalPity = MAX_PITY - remainingPity;
+    if (totalGolds === 0) {
+      const expectedPity = startingPity + 10;
+      if (expectedPity >= MAX_PITY) {
+        return { ok: false, error: "本次十连已触发硬保底，请记录至少一个五星。", session };
+      }
+      if (finalPity !== expectedPity) {
+        return { ok: false, error: `未记录五星时，十连后距离五星保底应为 ${MAX_PITY - expectedPity} 抽。`, session };
+      }
+    } else {
+      const lastGoldPosition = 10 - finalPity;
+      if (finalPity > 9 || totalGolds > lastGoldPosition) {
+        return { ok: false, error: "五星数量与十连后的保底距离不匹配，请核对卡池界面信息。", session };
+      }
+      if (totalGolds === 1 && lastGoldPosition > MAX_PITY - startingPity) {
+        return { ok: false, error: "本次硬保底应更早出现五星，请核对十连后的保底距离。", session };
+      }
+    }
+    if (banner === "character") {
+      const maxOffCount = state.bannerState.characterGuaranteed ? upCount : upCount + 1;
+      if (offCount > maxOffCount) {
+        return { ok: false, error: "当前小保底状态下，非限定五星数量无法成立，请核对记录。", session };
+      }
     }
 
     let resources = state.resources;
@@ -457,42 +460,13 @@
     let characterCopies = state.progress.characterCopies;
     let weaponCopies = state.progress.weaponCopies;
 
-    for (let pullIndex = 1; pullIndex <= 10; pullIndex += 1) {
-      const hasFiveStar = positions.includes(pullIndex);
-      const currentPity = banner === "character" ? characterPity : weaponPity;
-      if (!hasFiveStar && currentPity + 1 >= MAX_PITY) {
-        return {
-          ok: false,
-          error: `第 ${pullIndex} 抽已到 80 抽硬保底，需要标记为五星。`,
-          session
-        };
-      }
-
-      if (!hasFiveStar) {
-        if (banner === "character") characterPity += 1;
-        else weaponPity += 1;
-        continue;
-      }
-
-      if (banner === "character") {
-        const result = resultsByPosition.get(pullIndex);
-        if (!result) {
-          return { ok: false, error: `请填写第 ${pullIndex} 抽五星是 UP 还是歪。`, session };
-        }
-        if (characterGuaranteed && result === "off") {
-          return { ok: false, error: `第 ${pullIndex} 抽处于大保底，不能选择歪。`, session };
-        }
-        characterPity = 0;
-        if (result === "up") {
-          characterCopies += 1;
-          characterGuaranteed = false;
-        } else {
-          characterGuaranteed = true;
-        }
-      } else {
-        weaponPity = 0;
-        weaponCopies += 1;
-      }
+    if (banner === "character") {
+      characterPity = finalPity;
+      characterCopies += upCount;
+      characterGuaranteed = lastResult === "off";
+    } else {
+      weaponPity = finalPity;
+      weaponCopies += upCount;
     }
 
     const nextSession = {

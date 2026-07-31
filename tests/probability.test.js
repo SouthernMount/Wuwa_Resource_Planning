@@ -99,11 +99,10 @@ function compactSequence(sequence) {
   };
   const result = engine.validateAndApplyTenPull(session, {
     banner: "character",
-    positions: [1, 4],
-    results: [
-      { position: 1, result: "off" },
-      { position: 4, result: "up" }
-    ]
+    upCount: 1,
+    offCount: 1,
+    lastResult: "up",
+    remainingPity: 74
   });
   assert.strictEqual(result.ok, true);
   assert.strictEqual(result.session.progress.characterCopies, 1);
@@ -121,11 +120,70 @@ function compactSequence(sequence) {
   };
   const result = engine.validateAndApplyTenPull(session, {
     banner: "character",
-    positions: [],
-    results: []
+    upCount: 0,
+    offCount: 0,
+    lastResult: "none",
+    remainingPity: 1
   });
   assert.strictEqual(result.ok, false);
   assert.match(result.error, /硬保底/);
+}
+
+{
+  const session = {
+    goal: { characterRank: 0, weaponCount: 0 },
+    bannerState: { characterPity: 0, weaponPity: 0, characterGuaranteed: true },
+    resources: { astrites: 0, characterWaves: 10, weaponWaves: 0 },
+    progress: { characterCopies: 0, weaponCopies: 0 }
+  };
+  const result = engine.validateAndApplyTenPull(session, {
+    banner: "character",
+    upCount: 0,
+    offCount: 1,
+    lastResult: "off",
+    remainingPity: 80
+  });
+  assert.strictEqual(result.ok, false);
+  assert.match(result.error, /非限定五星数量/);
+}
+
+{
+  const session = {
+    goal: { characterRank: 1, weaponCount: 0 },
+    bannerState: { characterPity: 70, weaponPity: 0, characterGuaranteed: true },
+    resources: { astrites: 0, characterWaves: 10, weaponWaves: 0 },
+    progress: { characterCopies: 0, weaponCopies: 0 }
+  };
+  const result = engine.validateAndApplyTenPull(session, {
+    banner: "character",
+    upCount: 1,
+    offCount: 1,
+    lastResult: "off",
+    remainingPity: 80
+  });
+  assert.strictEqual(result.ok, true);
+  assert.strictEqual(result.session.progress.characterCopies, 1);
+  assert.strictEqual(result.session.bannerState.characterPity, 0);
+  assert.strictEqual(result.session.bannerState.characterGuaranteed, true);
+}
+
+{
+  const session = {
+    goal: { characterRank: 0, weaponCount: 1 },
+    bannerState: { characterPity: 0, weaponPity: 40, characterGuaranteed: false },
+    resources: { astrites: 0, characterWaves: 0, weaponWaves: 10 },
+    progress: { characterCopies: 0, weaponCopies: 0 }
+  };
+  const result = engine.validateAndApplyTenPull(session, {
+    banner: "weapon",
+    upCount: 2,
+    offCount: 0,
+    lastResult: "up",
+    remainingPity: 76
+  });
+  assert.strictEqual(result.ok, true);
+  assert.strictEqual(result.session.progress.weaponCopies, 2);
+  assert.strictEqual(result.session.bannerState.weaponPity, 4);
 }
 
 {
