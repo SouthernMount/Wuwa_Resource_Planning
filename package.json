@@ -2,10 +2,44 @@
   "name": "wuthering-waves-resource-planner",
   "version": "0.1.0",
   "private": true,
+  "author": "SouthernMount",
   "description": "鸣潮限定角色池与武器池资源规划工具",
+  "main": "electron/main.js",
   "scripts": {
-    "start": "node server.js",
-    "test": "node tests/probability.test.js"
+    "start": "electron .",
+    "start:web": "node server.js",
+    "test": "node tests/probability.test.js && node tests/recognition.test.js",
+    "package:win": "electron-builder --win --dir",
+    "package:portable": "electron-builder --win portable"
   },
-  "devDependencies": {}
+  "dependencies": {
+    "@tesseract.js-data/chi_sim": "^1.0.0",
+    "@tesseract.js-data/eng": "^1.0.0",
+    "tesseract.js": "^7.0.0"
+  },
+  "devDependencies": {
+    "electron": "^43.2.0",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.southernmount.wuwa-resource-planner",
+    "productName": "鸣潮资源规划",
+    "files": [
+      "index.html",
+      "overlay.html",
+      "server.js",
+      "electron/**/*",
+      "src/**/*",
+      "node_modules/tesseract.js/dist/**/*",
+      "node_modules/tesseract.js-core/**/*",
+      "node_modules/@tesseract.js-data/chi_sim/4.0.0_best_int/**/*",
+      "node_modules/@tesseract.js-data/eng/4.0.0_best_int/**/*",
+      "package.json"
+    ],
+    "win": {
+      "artifactName": "Wuwa_Resource_Planning-${version}.${ext}",
+      "signAndEditExecutable": false
+    },
+    "asar": true
+  }
 }

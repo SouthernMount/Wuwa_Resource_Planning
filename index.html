@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>鸣潮限定池资源规划</title>
-    <link rel="stylesheet" href="src/styles.css">
+    <link rel="stylesheet" href="src/styles.css?v=select-controls-3">
   </head>
   <body>
     <div class="app-frame">
@@ -19,6 +19,7 @@
         <nav class="nav-links" aria-label="规划区块">
           <a href="#basicData" aria-current="location">基础数据</a>
           <a href="#planningResult">当前规划</a>
+          <a href="#captureMonitor">自动捕捉</a>
           <a href="#tenPullRecord">十连记录</a>
           <a href="#roundHistory">本轮历史</a>
           <a href="#futureEstimate">未来估计</a>
@@ -195,11 +196,77 @@
           </section>
         </section>
 
+        <section class="panel capture-panel" id="captureMonitorPanel">
+          <div class="panel-heading" id="captureMonitor">
+            <div>
+              <span class="section-kicker">03</span>
+              <h2>自动捕捉监控</h2>
+            </div>
+            <span class="small-badge" id="captureStatus">等待桌面环境</span>
+          </div>
+
+          <div class="capture-grid">
+            <div class="capture-field">
+              <div class="capture-field-heading">
+                <label for="captureSource">鸣潮窗口</label>
+                <button type="button" class="text-button" id="refreshCaptureSources">刷新</button>
+              </div>
+              <span class="select-control">
+                <select id="captureSource">
+                  <option value="">读取窗口列表中...</option>
+                </select>
+              </span>
+            </div>
+            <label>
+              当前抽取池类别
+              <span class="select-control">
+                <select id="captureBanner">
+                  <option value="character">限定角色池</option>
+                  <option value="weapon">限定武器池</option>
+                </select>
+              </span>
+            </label>
+            <div class="capture-primary-action">
+              <button type="button" class="primary-button" id="startCaptureMonitor">启动监控</button>
+            </div>
+          </div>
+
+          <p class="capture-note">
+            自动捕捉仅读取用户选择的窗口画面。混合多金时需要确认最后一金类型。
+          </p>
+
+          <section class="capture-overlay-tools" id="captureOverlayControls" hidden aria-label="浮窗控制">
+            <span class="capture-overlay-label">浮窗</span>
+            <button type="button" class="ghost-button" id="toggleOverlay" hidden>显示浮窗</button>
+            <label class="switch-toggle capture-overlay-switch" id="overlayInteractionControl" for="toggleOverlayInteraction">
+              <input id="toggleOverlayInteraction" type="checkbox">
+              <span><strong>鼠标穿透</strong></span>
+            </label>
+          </section>
+
+          <div class="capture-pending" id="capturePending" hidden>
+            <div>
+              <span>待确认识别结果</span>
+              <strong id="capturePendingText">--</strong>
+            </div>
+            <div class="capture-confirm-actions">
+              <button type="button" class="secondary-button" id="confirmPendingUp">最后一金限定</button>
+              <button type="button" class="secondary-button" id="confirmPendingOff">最后一金非限定</button>
+              <button type="button" class="ghost-button" id="rejectPendingRecord">放弃</button>
+            </div>
+          </div>
+
+          <details class="capture-debug">
+            <summary>最近 OCR 文本</summary>
+            <pre id="captureResultText">暂无识别文本。</pre>
+          </details>
+        </section>
+
         <section class="session-layout">
           <section class="panel session-panel locked" id="sessionPanel">
             <div class="panel-heading" id="tenPullRecord">
               <div>
-                <span class="section-kicker">03</span>
+                <span class="section-kicker">04</span>
                 <h2>十连动态记录</h2>
               </div>
               <span id="sessionStatus" class="small-badge">基础计算后解锁</span>
@@ -211,10 +278,12 @@
               <div class="form-grid compact">
                 <label>
                   本次十连池子
-                  <select id="tenPullBanner">
-                    <option value="character">限定角色池</option>
-                    <option value="weapon">限定武器池</option>
-                  </select>
+                  <span class="select-control">
+                    <select id="tenPullBanner">
+                      <option value="character">限定角色池</option>
+                      <option value="weapon">限定武器池</option>
+                    </select>
+                  </span>
                 </label>
               </div>
 
@@ -227,13 +296,15 @@
                   非限定五星数量
                   <input id="offBannerGoldCount" type="number" min="0" max="10" step="1" value="0">
                 </label>
-                <label class="record-field">
+                <label class="record-field select-record-field">
                   最后一个五星
-                  <select id="lastFiveStar">
-                    <option value="none">本次无五星</option>
-                    <option value="up">限定五星</option>
-                    <option value="off">非限定五星</option>
-                  </select>
+                  <span class="select-control">
+                    <select id="lastFiveStar">
+                      <option value="none">本次无五星</option>
+                      <option value="up">限定五星</option>
+                      <option value="off">非限定五星</option>
+                    </select>
+                  </span>
                 </label>
                 <label class="record-field remaining-pity-field">
                   十连后距离五星保底
@@ -259,7 +330,7 @@
           <section class="panel history-panel" id="roundHistory">
             <div class="panel-heading">
               <div>
-                <span class="section-kicker">04</span>
+                <span class="section-kicker">05</span>
                 <h2>本轮历史</h2>
               </div>
               <div class="history-actions">
@@ -275,7 +346,7 @@
         <section class="panel future-panel locked" id="futurePanel">
           <div class="panel-heading" id="futureEstimate">
             <div>
-              <span class="section-kicker">05</span>
+              <span class="section-kicker">06</span>
               <h2>未来抽卡估计</h2>
             </div>
             <span id="futureStatus" class="small-badge">抽卡结束后解锁</span>
@@ -355,7 +426,11 @@
       </section>
     </div>
 
+    <script src="node_modules/tesseract.js/dist/tesseract.min.js"></script>
     <script src="src/engine.js"></script>
+    <script src="src/recognition.js"></script>
     <script src="src/app.js"></script>
+    <script src="src/select-enhancements.js"></script>
+    <script src="src/capture-monitor.js"></script>
   </body>
 </html>

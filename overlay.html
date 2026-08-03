@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>鸣潮资源规划浮窗</title>
+    <link rel="stylesheet" href="src/styles.css?v=select-controls-3">
+  </head>
+  <body class="overlay-body">
+    <main class="overlay-card" id="overlayCard">
+      <div class="overlay-heading" title="拖动此区域移动浮窗">
+        <div class="overlay-drag-zone" id="overlayDragHandle" aria-hidden="true"></div>
+        <div class="overlay-title">
+          <span>鸣潮资源规划</span>
+          <small>拖动此处移动浮窗</small>
+        </div>
+        <div class="overlay-heading-actions">
+          <strong id="overlayStatus">待启动</strong>
+          <button type="button" class="overlay-close" id="overlayHide" aria-label="隐藏浮窗" title="隐藏浮窗">
+            <span aria-hidden="true">&#215;</span>
+          </button>
+        </div>
+      </div>
+
+      <label class="overlay-banner-control" for="overlayBanner">
+        <span>当前抽取池</span>
+        <span class="select-control overlay-select-control">
+          <select id="overlayBanner" aria-label="当前抽取池类别">
+            <option value="character">限定角色池</option>
+            <option value="weapon">限定武器池</option>
+          </select>
+        </span>
+      </label>
+
+      <section class="overlay-probability">
+        <span>继续概率</span>
+        <strong id="overlayProbability">--</strong>
+      </section>
+
+      <div class="overlay-info-grid">
+        <div class="overlay-info-card">
+          <span>剩余资源</span>
+          <div class="overlay-list" id="overlayResources">--</div>
+        </div>
+        <div class="overlay-info-card">
+          <span>已垫抽数</span>
+          <div class="overlay-list" id="overlayPity">--</div>
+        </div>
+        <div class="overlay-info-card overlay-info-wide">
+          <span>目标进度</span>
+          <div class="overlay-list" id="overlayProgress">--</div>
+        </div>
+      </div>
+
+      <p id="overlayMessage">在主窗口选择游戏窗口并启动监控。</p>
+
+      <section class="overlay-pending" id="overlayPending" hidden>
+        <span>待确认记录</span>
+        <strong id="overlayPendingText">--</strong>
+        <div class="overlay-actions">
+          <button type="button" id="overlayConfirmUp">最后限定</button>
+          <button type="button" id="overlayConfirmOff">最后非限定</button>
+          <button type="button" id="overlayReject">放弃</button>
+        </div>
+      </section>
+
+      <div class="overlay-footer">
+        <button type="button" id="overlayPause">暂停</button>
+        <button type="button" id="overlayInteractive">切换至鼠标穿透</button>
+      </div>
+    </main>
+
+    <script src="src/overlay.js"></script>
+    <script src="src/select-enhancements.js"></script>
+  </body>
+</html>

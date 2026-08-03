@@ -406,6 +406,7 @@
     resetTenPullRecord();
     saveState();
     renderSession();
+    emitPlannerState();
   }
 
   function renderSession() {
@@ -456,6 +457,15 @@
       item.innerHTML = `<span>${icon}${label}</span><strong>${value}</strong>`;
       elements.sessionState.appendChild(item);
     }
+  }
+
+  function emitPlannerState() {
+    document.dispatchEvent(new CustomEvent("wuwa:planner-state", {
+      detail: {
+        activeSession: appState.activeSession,
+        lastInput: appState.lastInput
+      }
+    }));
   }
 
   function renderHistory(records, goal) {
@@ -692,6 +702,53 @@
     return `${bannerName}十连：${goldText}。十连后距离五星保底 ${record.remainingPity} 抽。当前角色 ${nextSession.progress.characterCopies}/${nextSession.goal.characterRank + 1}，武器 ${nextSession.progress.weaponCopies}/${nextSession.goal.weaponCount}。`;
   }
 
+  function applyTenPullRecord(record, metadata = {}) {
+    if (!appState.activeSession) {
+      return { ok: false, error: "请先开启本轮规划。" };
+    }
+    const beforeSnapshot = {
+      bannerState: engine.normalizeBannerState(appState.activeSession.bannerState),
+      resources: engine.normalizeResources(appState.activeSession.resources),
+      progress: engine.normalizeProgress(appState.activeSession.progress)
+    };
+    const result = engine.validateAndApplyTenPull(appState.activeSession, record);
+    if (!result.ok) {
+      renderTenPullValidation();
+      return { ok: false, error: result.error };
+    }
+
+    const nextSession = result.session;
+    const afterSnapshot = {
+      bannerState: engine.normalizeBannerState(nextSession.bannerState),
+      resources: engine.normalizeResources(nextSession.resources),
+      progress: engine.normalizeProgress(nextSession.progress)
+    };
+    const results = [
+      ...Array.from({ length: record.upCount }, () => ({ result: "up" })),
+      ...Array.from({ length: record.offCount }, () => ({ result: "off" }))
+    ];
+    nextSession.records = [
+      ...appState.activeSession.records,
+      {
+        ...record,
+        results,
+        beforeSnapshot,
+        afterSnapshot,
+        summary: summarizeRecord(record, nextSession),
+        createdAt: new Date().toISOString(),
+        source: metadata.source || "manual",
+        confidence: metadata.confidence || null,
+        detectedNames: metadata.names || []
+      }
+    ];
+    appState.activeSession = nextSession;
+    saveState();
+    resetTenPullRecord();
+    renderSession();
+    emitPlannerState();
+    return { ok: true, session: nextSession };
+  }
+
   function finishSession() {
     const session = appState.activeSession;
     if (!session) return;
@@ -721,6 +778,7 @@
     scheduleCalculateAndRender(nextInput, { characterCopies: 0, weaponCopies: 0 });
     renderSession();
     renderFutureModule();
+    emitPlannerState();
     showToast("抽卡会话已结束，数据已更新");
   }
 
@@ -860,42 +918,11 @@
       renderTenPullValidation();
       return;
     }
-    const beforeSnapshot = {
-      bannerState: engine.normalizeBannerState(appState.activeSession.bannerState),
-      resources: engine.normalizeResources(appState.activeSession.resources),
-      progress: engine.normalizeProgress(appState.activeSession.progress)
-    };
-    const result = engine.validateAndApplyTenPull(appState.activeSession, record);
+    const result = applyTenPullRecord(record, { source: "manual" });
     if (!result.ok) {
       renderTenPullValidation();
       return;
     }
-
-    const nextSession = result.session;
-    const afterSnapshot = {
-      bannerState: engine.normalizeBannerState(nextSession.bannerState),
-      resources: engine.normalizeResources(nextSession.resources),
-      progress: engine.normalizeProgress(nextSession.progress)
-    };
-    const results = [
-      ...Array.from({ length: record.upCount }, () => ({ result: "up" })),
-      ...Array.from({ length: record.offCount }, () => ({ result: "off" }))
-    ];
-    nextSession.records = [
-      ...appState.activeSession.records,
-      {
-        ...record,
-        results,
-        beforeSnapshot,
-        afterSnapshot,
-        summary: summarizeRecord(record, nextSession),
-        createdAt: new Date().toISOString()
-      }
-    ];
-    appState.activeSession = nextSession;
-    saveState();
-    resetTenPullRecord();
-    renderSession();
     showToast("已记录本次十连");
   });
 
@@ -924,6 +951,7 @@
     saveState();
     renderSession();
     resetTenPullRecord();
+    emitPlannerState();
     showToast("已回溯上一次十连");
   });
 
@@ -935,6 +963,7 @@
     saveState();
     renderSession();
     resetTenPullRecord();
+    emitPlannerState();
     showToast("已回溯本次所有记录");
   });
 
@@ -1092,6 +1121,69 @@
     document.addEventListener("click", () => closeAll());
   }
 
+  function formatOverlaySnapshot() {
+    const session = appState.activeSession;
+    if (!session) {
+      return {
+        probabilityText: "--",
+        resources: [],
+        pity: [],
+        progress: [],
+        resourcesText: "--",
+        pityText: "--",
+        progressText: "未开启"
+      };
+    }
+    const input = {
+      goal: session.goal,
+      bannerState: session.bannerState,
+      resources: session.resources,
+      useSoftPity: session.useSoftPity,
+      progress: session.progress
+    };
+    const probability = engine.calculateCompletionProbability(input);
+    const resources = [
+      { type: "astrite", label: "星声", value: formatNumber(session.resources.astrites) },
+      { type: "radiant", label: "浮金波纹", value: formatNumber(session.resources.characterWaves) },
+      { type: "forging", label: "铸潮波纹", value: formatNumber(session.resources.weaponWaves) }
+    ];
+    const pity = [
+      { label: "角色池", value: `${session.bannerState.characterPity} 抽` },
+      { label: "武器池", value: `${session.bannerState.weaponPity} 抽` },
+      { label: "角色小保底", value: session.bannerState.characterGuaranteed ? "已触发" : "未触发" }
+    ];
+    const progress = [
+      { label: "角色进度", value: `${session.progress.characterCopies}/${session.goal.characterRank + 1}` },
+      { label: "武器进度", value: `${session.progress.weaponCopies}/${session.goal.weaponCount}` }
+    ];
+    return {
+      probabilityText: formatPercent(probability),
+      resources,
+      pity,
+      progress,
+      resourcesText: resources.map((item) => `${item.label} ${item.value}`).join("；"),
+      pityText: pity.map((item) => `${item.label} ${item.value}`).join("；"),
+      progressText: progress.map((item) => `${item.label} ${item.value}`).join("，")
+    };
+  }
+
+  window.WuwaPlannerApp = {
+    applyDetectedRecord(record, metadata) {
+      const result = applyTenPullRecord(record, metadata);
+      if (result.ok) showToast("已自动记录本次十连");
+      return result;
+    },
+    getOverlaySnapshot: formatOverlaySnapshot,
+    hasActiveSession() {
+      return Boolean(appState.activeSession);
+    },
+    setCurrentBanner(banner) {
+      elements.tenPullBanner.value = banner === "weapon" ? "weapon" : "character";
+      resetTenPullRecord();
+    }
+  };
+
   initializeInfoButtons();
   initializeNavigation();
+  emitPlannerState();
 })();
