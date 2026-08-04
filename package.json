@@ -14,7 +14,6 @@
   },
   "dependencies": {
     "@tesseract.js-data/chi_sim": "^1.0.0",
-    "@tesseract.js-data/eng": "^1.0.0",
     "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
@@ -24,6 +23,7 @@
   "build": {
     "appId": "com.southernmount.wuwa-resource-planner",
     "productName": "鸣潮资源规划",
+    "electronDist": "node_modules/electron/dist",
     "files": [
       "index.html",
       "overlay.html",
@@ -32,14 +32,24 @@
       "src/**/*",
       "node_modules/tesseract.js/dist/**/*",
       "node_modules/tesseract.js-core/**/*",
-      "node_modules/@tesseract.js-data/chi_sim/4.0.0_best_int/**/*",
-      "node_modules/@tesseract.js-data/eng/4.0.0_best_int/**/*",
+      "node_modules/@tesseract.js-data/chi_sim/**/*",
       "package.json"
     ],
+    "asarUnpack": [
+      "node_modules/tesseract.js/dist/**/*",
+      "node_modules/tesseract.js-core/**/*",
+      "node_modules/@tesseract.js-data/chi_sim/**/*"
+    ],
+    "toolsets": {
+      "winCodeSign": null
+    },
     "win": {
       "artifactName": "Wuwa_Resource_Planning-${version}.${ext}",
       "signAndEditExecutable": false
     },
     "asar": true
+  },
+  "toolsets": {
+  "winCodeSign": null
   }
 }

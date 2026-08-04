@@ -1,4 +1,5 @@
-const { app, BrowserWindow, desktopCapturer, globalShortcut, ipcMain, screen } = require("electron");
+const { app, BrowserWindow, desktopCapturer, dialog, globalShortcut, ipcMain, screen } = require("electron");
+const fs = require("fs");
 const path = require("path");
 const { pathToFileURL } = require("url");
 
@@ -8,6 +9,31 @@ let overlayInteractive = true;
 const OVERLAY_WIDTH = 390;
 const OVERLAY_MIN_HEIGHT = 392;
 const OVERLAY_MAX_HEIGHT = 720;
+const MAIN_MIN_WIDTH = 900;
+
+function hardenWindow(window) {
+  window.webContents.on("will-navigate", (event) => event.preventDefault());
+  window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+}
+
+function runtimeAssetPath(...segments) {
+  if (!app.isPackaged) return path.join(__dirname, "..", ...segments);
+  return path.join(process.resourcesPath, "app.asar.unpacked", ...segments);
+}
+
+function findLanguageDataDirectory(language) {
+  const languageRoot = runtimeAssetPath("node_modules", "@tesseract.js-data", language);
+  const directories = fs.readdirSync(languageRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort((left, right) => right.localeCompare(left));
+  const preferredDirectory = directories.find((name) => name.endsWith("_best_int")) || directories[0];
+
+  if (!preferredDirectory) {
+    throw new Error(`No Tesseract language data directory found for ${language}.`);
+  }
+  return path.join(languageRoot, preferredDirectory);
+}
 
 function broadcastOverlayInteractionState(message) {
   const payload = {
@@ -42,7 +68,7 @@ function createMainWindow() {
   mainWindow = new BrowserWindow({
     width: 1380,
     height: 920,
-    minWidth: 900,
+    minWidth: MAIN_MIN_WIDTH,
     minHeight: 640,
     backgroundColor: "#eef3f1",
     title: "鸣潮资源规划",
@@ -53,6 +79,7 @@ function createMainWindow() {
     }
   });
 
+  hardenWindow(mainWindow);
   mainWindow.loadFile(path.join(__dirname, "..", "index.html"));
   mainWindow.on("closed", () => {
     mainWindow = null;
@@ -91,6 +118,7 @@ function createOverlayWindow() {
   overlayWindow.setAlwaysOnTop(true, "screen-saver");
   overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   overlayWindow.setIgnoreMouseEvents(!overlayInteractive);
+  hardenWindow(overlayWindow);
   overlayWindow.loadFile(path.join(__dirname, "..", "overlay.html"));
   overlayWindow.on("closed", () => {
     overlayWindow = null;
@@ -101,11 +129,19 @@ function createOverlayWindow() {
 
 app.whenReady().then(() => {
   createMainWindow();
-  globalShortcut.register("CommandOrControl+Shift+O", () => {
+  const shortcutRegistered = globalShortcut.register("CommandOrControl+Shift+O", () => {
     setOverlayInteractive(!overlayInteractive, overlayInteractive
       ? "浮窗已穿透；可按 Ctrl+Shift+O 或在主窗口恢复操作。"
       : "浮窗已恢复可操作。");
   });
+
+  if (!shortcutRegistered) {
+    dialog.showMessageBox(mainWindow, {
+      type: "warning",
+      title: "快捷键不可用",
+      message: "Ctrl+Shift+O 已被其他程序占用。请通过主界面的浮窗控制切换鼠标穿透状态。"
+    });
+  }
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
@@ -136,12 +172,11 @@ ipcMain.handle("capture:list-sources", async () => {
 });
 
 ipcMain.handle("ocr:get-config", () => {
-  const root = path.join(__dirname, "..");
-  const toUrl = (relativePath) => pathToFileURL(path.join(root, relativePath)).toString();
+  const toUrl = (...segments) => pathToFileURL(runtimeAssetPath(...segments)).toString();
   return {
-    workerPath: toUrl("node_modules/tesseract.js/dist/worker.min.js"),
-    corePath: toUrl("node_modules/tesseract.js-core/tesseract-core-simd-lstm.wasm.js"),
-    langPath: toUrl("node_modules/@tesseract.js-data/chi_sim/4.0.0_best_int")
+    workerPath: toUrl("node_modules", "tesseract.js", "dist", "worker.min.js"),
+    corePath: toUrl("node_modules", "tesseract.js-core", "tesseract-core-simd-lstm.wasm.js"),
+    langPath: pathToFileURL(findLanguageDataDirectory("chi_sim")).toString()
   };
 });
 

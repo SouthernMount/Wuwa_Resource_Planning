@@ -3,18 +3,16 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' file:; script-src 'self' file: 'wasm-unsafe-eval'; style-src 'self' file: 'unsafe-inline'; img-src 'self' file: data: blob:; font-src 'self' file: data:; worker-src 'self' file: blob:; connect-src 'self' file: blob:; media-src 'self' file: blob:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
     <title>鸣潮限定池资源规划</title>
     <link rel="stylesheet" href="src/styles.css?v=select-controls-3">
   </head>
   <body>
     <div class="app-frame">
       <aside class="side-nav" aria-label="页面导航">
-        <a class="brand-mark" href="#top">
-          <span class="brand-sigil">W</span>
-          <span>
-            <strong>鸣潮资源规划</strong>
-            <small>限定池工作台</small>
-          </span>
+        <a class="brand-mark" href="#top" aria-label="鸣潮资源规划">
+          <span class="brand-title">鸣潮</span>
+          <span class="brand-caption">资源规划 · 限定池工作台</span>
         </a>
         <nav class="nav-links" aria-label="规划区块">
           <a href="#basicData" aria-current="location">基础数据</a>
