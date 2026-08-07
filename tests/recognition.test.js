@@ -21,16 +21,9 @@ const recognition = require("../src/recognition");
 }
 
 {
-  assert.strictEqual(recognition.parseRemainingPity("距离五星保底 63 抽"), 63);
-  assert.strictEqual(recognition.parseRemainingPity("还有12抽必得五星"), 12);
-  assert.strictEqual(recognition.parseRemainingPity("无关文本"), null);
-}
-
-{
-  const detection = recognition.buildDetectedRecord({
+  const detection = recognition.buildObservedRecord({
     banner: "character",
-    resultText: "获得\n维里奈\n今汐",
-    pityText: "距离五星保底 78 抽"
+    resultText: "获得\n维里奈\n今汐"
   });
   assert.strictEqual(detection.ok, true);
   assert.strictEqual(detection.needsConfirmation, true);
@@ -40,16 +33,22 @@ const recognition = require("../src/recognition");
 }
 
 {
-  const detection = recognition.buildDetectedRecord({
+  const detection = recognition.buildObservedRecord({
     banner: "weapon",
-    resultText: "获得\n时和岁稔\n时和岁稔",
-    pityText: "距离五星保底 76 抽"
+    resultText: "获得\n五星\n时和岁稔\n时和岁稔"
   });
   assert.strictEqual(detection.ok, true);
   assert.strictEqual(detection.needsConfirmation, false);
   assert.strictEqual(detection.record.upCount, 2);
   assert.strictEqual(detection.record.offCount, 0);
   assert.strictEqual(detection.record.lastResult, "up");
+}
+
+{
+  assert.strictEqual(recognition.detectScene("确认"), "unknown");
+  assert.strictEqual(recognition.detectScene("调谐获得跳过"), "result");
+  const detection = recognition.buildObservedRecord({ banner: "character", resultText: "获得\n确认" });
+  assert.strictEqual(detection.ok, false);
 }
 
 console.log("All recognition tests passed.");

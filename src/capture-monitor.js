@@ -14,6 +14,9 @@
     overlayInteraction: document.getElementById("toggleOverlayInteraction"),
     overlayInteractionControl: document.getElementById("overlayInteractionControl"),
     overlayControls: document.getElementById("captureOverlayControls"),
+    historyConnect: document.getElementById("connectGachaHistory"),
+    historyChooseDirectory: document.getElementById("chooseGameDirectory"),
+    historyStatus: document.getElementById("historySyncStatus"),
     status: document.getElementById("captureStatus"),
     resultText: document.getElementById("captureResultText"),
     pending: document.getElementById("capturePending"),
@@ -29,6 +32,7 @@
   let video = null;
   let canvas = null;
   let timer = null;
+  let historyTimer = null;
   let isRunning = false;
   let isPaused = false;
   let isOcrBusy = false;
@@ -39,6 +43,14 @@
   let overlayVisible = false;
   let overlayInteractive = true;
   let ocrConfig = null;
+  let lastScene = "unknown";
+  let resultSequence = 0;
+  let historyFingerprint = "";
+  let historyBaselineEstablished = false;
+
+  function isLikelyGameSource(sourceName) {
+    return /鸣潮|Wuthering|Client-Win64|KR/i.test(String(sourceName || ""));
+  }
 
   function setStatus(message, tone = "idle") {
     elements.status.textContent = message;
@@ -53,6 +65,7 @@
     elements.source.disabled = isRunning;
     elements.banner.disabled = Boolean(pendingDetection);
     elements.refreshSources.disabled = isRunning;
+    elements.historyConnect.disabled = !planner?.hasActiveSession?.();
     elements.overlayControls.hidden = !isRunning && !overlayVisible;
     elements.overlay.hidden = overlayVisible;
     elements.overlayInteractionControl.hidden = !overlayVisible;
@@ -85,6 +98,8 @@
     elements.start.disabled = true;
     elements.overlay.disabled = true;
     elements.overlayInteraction.disabled = true;
+    elements.historyConnect.disabled = true;
+    elements.historyChooseDirectory.disabled = true;
     setStatus("自动捕捉仅在 Electron 桌面版中可用。", "error");
     return false;
   }
@@ -100,11 +115,12 @@
     if (!requireDesktop()) return;
     elements.source.innerHTML = "";
     const sources = await desktop.listCaptureSources();
-    const likelyGame = sources.find((source) => /鸣潮|Wuthering|Client-Win64|KR/i.test(source.name));
+    const likelyGame = sources.find((source) => isLikelyGameSource(source.name));
     for (const source of sources) {
       const option = document.createElement("option");
       option.value = source.id;
       option.textContent = source.name;
+      option.dataset.gameSource = isLikelyGameSource(source.name) ? "true" : "false";
       elements.source.appendChild(option);
     }
     if (likelyGame) elements.source.value = likelyGame.id;
@@ -166,12 +182,41 @@
 
   function signatureOf(record) {
     return [
+      resultSequence,
       record.banner,
       record.upCount,
       record.offCount,
-      record.lastResult || "pending",
-      record.remainingPity
+      record.lastResult || "pending"
     ].join(":");
+  }
+
+  function setHistoryStatus(message, tone = "idle") {
+    if (!elements.historyStatus) return;
+    elements.historyStatus.textContent = message;
+    elements.historyStatus.dataset.tone = tone;
+  }
+
+  async function syncHistory({ quiet = false } = {}) {
+    if (!desktop?.connectHistory || !planner?.hasActiveSession?.()) return { ok: false };
+    const banner = elements.banner.value === "weapon" ? "weapon" : "character";
+    if (!quiet) setHistoryStatus("正在读取本机抽卡历史…");
+    const snapshot = await desktop.connectHistory(banner);
+    if (!snapshot?.ok) {
+      if (!quiet) setHistoryStatus(snapshot?.error || "暂时无法读取抽卡历史。请在游戏内打开对应池子的历史页面后重试。", "error");
+      return snapshot || { ok: false };
+    }
+    const changed = historyBaselineEstablished && snapshot.fingerprint && snapshot.fingerprint !== historyFingerprint;
+    historyFingerprint = snapshot.fingerprint || historyFingerprint;
+    historyBaselineEstablished = true;
+    const applied = planner.applyHistorySnapshot({ ...snapshot, historyUpdated: Boolean(changed) });
+    if (applied.ok) {
+      const message = changed
+        ? "历史已更新：精确垫抽与小保底已校正。"
+        : "已同步本机历史：当前保底状态已确认。";
+      setHistoryStatus(message, "success");
+      if (!quiet) setStatus(message, "success");
+    }
+    return snapshot;
   }
 
   function showPending(detection) {
@@ -198,7 +243,7 @@
       setStatus("已忽略重复识别结果。", "idle");
       return;
     }
-    const result = planner.applyDetectedRecord(record, {
+    const result = planner.applyObservedRecord(record, {
       source: "capture",
       confidence: detection.confidence,
       names: detection.names || []
@@ -210,7 +255,12 @@
     lastAppliedSignature = signature;
     lastResultText = "";
     lastResultAt = 0;
-    setStatus(`已自动记录：${recognition.describeRecord(record)}`, "success");
+    setStatus(result.estimated
+      ? "已记录五星结果，正在等待抽卡历史更新以校正保底。"
+      : "已记录无五星十连，垫抽已精确累计。", "success");
+    if (result.estimated) {
+      window.setTimeout(() => syncHistory({ quiet: true }).catch(() => {}), 1200);
+    }
   }
 
   function tryBuildRecord(ocrText, scene) {
@@ -218,26 +268,17 @@
     if (scene === "result") {
       lastResultText = ocrText;
       lastResultAt = Date.now();
-      elements.resultText.textContent = ocrText.trim() || "识别到结果画面，但 OCR 未读取到文本。";
-      setStatus("已识别到抽卡结果，等待卡池保底画面。", "idle");
+      resultSequence += 1;
+      elements.resultText.textContent = ocrText.trim() || "识别到结果画面，但 OCR 未读取到文字。";
+      const observation = recognition.buildObservedRecord({ banner, resultText: lastResultText });
+      if (!observation.ok) {
+        setStatus(observation.error || "无法解析本次十连结果。", "error");
+        return;
+      }
+      if (observation.needsConfirmation) showPending(observation);
+      else applyDetectedRecord(observation);
       return;
     }
-
-    const remainingPity = recognition.parseRemainingPity(ocrText);
-    if (!Number.isInteger(remainingPity)) return;
-    const resultTextIsFresh = lastResultText && Date.now() - lastResultAt < 120000;
-    const detection = recognition.buildDetectedRecord({
-      banner,
-      resultText: resultTextIsFresh ? lastResultText : "",
-      pityText: ocrText,
-      remainingPity
-    });
-    if (!detection.ok) {
-      setStatus(detection.error, "error");
-      return;
-    }
-    if (detection.needsConfirmation) showPending(detection);
-    else applyDetectedRecord(detection);
   }
 
   async function tick() {
@@ -251,9 +292,10 @@
       const scene = recognition.detectScene(result.text);
       if (scene === "unknown") {
         setStatus("未识别到抽卡结果或保底画面。", "idle");
-      } else {
+      } else if (scene === "result" && lastScene !== "result") {
         tryBuildRecord(result.text, scene);
       }
+      lastScene = scene;
     } catch (error) {
       setStatus(`OCR 识别失败：${error.message || error}`, "error");
     } finally {
@@ -271,6 +313,11 @@
       setStatus("请先选择要捕捉的鸣潮窗口。", "error");
       return;
     }
+    const selectedSource = elements.source.selectedOptions[0];
+    if (selectedSource?.dataset.gameSource !== "true") {
+      setStatus("请从列表中选择名称为鸣潮、Wuthering 或 Client-Win64 的游戏窗口。", "error");
+      return;
+    }
 
     stopMonitor();
     planner.setCurrentBanner(elements.banner.value);
@@ -282,18 +329,23 @@
 
     isRunning = true;
     isPaused = false;
+    lastScene = "unknown";
     updateMonitorControls();
     timer = window.setInterval(tick, 2600);
+    historyTimer = window.setInterval(() => syncHistory({ quiet: true }).catch(() => {}), 15000);
     await desktop.showOverlay();
     overlayVisible = true;
     updateMonitorControls();
     await setOverlayInteraction(true, "浮窗已显示，可直接操作。");
-    setStatus("监控已启动，请在游戏中完成十连并回到卡池界面。", "success");
+    syncHistory({ quiet: true }).catch(() => {});
+    setStatus("监控已启动：结果页用于记录十连，抽卡历史更新后会自动校正保底。", "success");
   }
 
   function stopMonitor() {
     if (timer) window.clearInterval(timer);
     timer = null;
+    if (historyTimer) window.clearInterval(historyTimer);
+    historyTimer = null;
     if (stream) {
       for (const track of stream.getTracks()) track.stop();
     }
@@ -316,6 +368,13 @@
   }
 
   elements.refreshSources.addEventListener("click", refreshSources);
+  elements.historyConnect?.addEventListener("click", () => {
+    syncHistory().catch(() => setHistoryStatus("读取抽卡历史时发生错误。", "error"));
+  });
+  elements.historyChooseDirectory?.addEventListener("click", async () => {
+    const result = await desktop?.chooseGameDirectory?.();
+    if (result?.ok) setHistoryStatus("已选择游戏目录。请打开游戏内对应池子的抽卡历史后连接同步。", "success");
+  });
   elements.start.addEventListener("click", () => {
     if (isRunning) {
       stopMonitor();
@@ -337,6 +396,8 @@
       : "已切换至可操作浮窗。");
   });
   elements.banner.addEventListener("change", () => {
+    historyFingerprint = "";
+    historyBaselineEstablished = false;
     planner?.setCurrentBanner(elements.banner.value);
     updateOverlay(`已切换至${elements.banner.value === "weapon" ? "限定武器池" : "限定角色池"}。`);
   });
@@ -375,6 +436,8 @@
       }
       const banner = payload.payload?.banner === "weapon" ? "weapon" : "character";
       elements.banner.value = banner;
+      historyFingerprint = "";
+      historyBaselineEstablished = false;
       planner?.setCurrentBanner(banner);
       setStatus(`已切换至${banner === "weapon" ? "限定武器池" : "限定角色池"}。`, "idle");
     }
@@ -385,7 +448,10 @@
     }
   });
 
-  document.addEventListener("wuwa:planner-state", () => updateOverlay("规划状态已刷新。"));
+  document.addEventListener("wuwa:planner-state", () => {
+    updateMonitorControls();
+    updateOverlay("规划状态已刷新。");
+  });
   requireDesktop();
   updateMonitorControls();
   refreshSources().catch((error) => setStatus(`窗口列表读取失败：${error.message || error}`, "error"));

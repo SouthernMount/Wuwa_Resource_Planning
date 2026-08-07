@@ -486,12 +486,255 @@
     return { ok: true, session: nextSession };
   }
 
+  function normalizeObservedRecord(record) {
+    const banner = record && record.banner === "weapon" ? "weapon" : "character";
+    const upCount = Number(record && record.upCount);
+    const offCount = banner === "character" ? Number(record && record.offCount) : 0;
+    const totalGolds = upCount + offCount;
+    const lastResult = totalGolds === 0 ? "none" : (record && record.lastResult === "off" ? "off" : "up");
+
+    if (!Number.isInteger(upCount) || upCount < 0 || upCount > 10 ||
+      !Number.isInteger(offCount) || offCount < 0 || offCount > 10 || totalGolds > 10) {
+      return { ok: false, error: "五星数量需要是 0 到 10 的整数。" };
+    }
+    if (totalGolds === 0 && lastResult !== "none") {
+      return { ok: false, error: "未识别到五星时，最后一个五星应为本次无五星。" };
+    }
+    if (totalGolds > 0 && (lastResult === "none" || (lastResult === "up" && upCount === 0) ||
+      (lastResult === "off" && offCount === 0))) {
+      return { ok: false, error: "五星数量与最后一个五星类型不一致。" };
+    }
+    if (banner === "weapon" && (offCount > 0 || lastResult === "off")) {
+      return { ok: false, error: "限定武器池的五星均为限定五星。" };
+    }
+    return { ok: true, banner, upCount, offCount, totalGolds, lastResult };
+  }
+
+  function normalizePosterior(entries) {
+    const merged = new Map();
+    for (const entry of entries || []) {
+      const key = `${entry.pity}:${entry.characterGuaranteed ? 1 : 0}`;
+      const previous = merged.get(key) || 0;
+      merged.set(key, previous + (Number(entry.probability) || 0));
+    }
+    let total = 0;
+    for (const probability of merged.values()) total += probability;
+    if (total <= 0) return [];
+    return [...merged.entries()].map(([key, probability]) => {
+      const [pity, guaranteed] = key.split(":");
+      return {
+        pity: Number(pity),
+        characterGuaranteed: guaranteed === "1",
+        probability: probability / total
+      };
+    });
+  }
+
+  function observedTenPullPosterior(start, observation, useSoftPity) {
+    const normalized = normalizeObservedRecord(observation);
+    if (!normalized.ok) return normalized;
+    const startPity = clampInteger(start && start.pity, 0, MAX_PITY - 1);
+    const startGuaranteed = Boolean(start && start.characterGuaranteed);
+    const states = new Map();
+    states.set(`${startPity}:${startGuaranteed ? 1 : 0}:0:0:none`, {
+      pity: startPity,
+      characterGuaranteed: startGuaranteed,
+      upCount: 0,
+      offCount: 0,
+      lastResult: "none",
+      probability: 1
+    });
+
+    for (let draw = 0; draw < 10; draw += 1) {
+      const nextStates = new Map();
+      const add = (state) => {
+        if (state.upCount > normalized.upCount || state.offCount > normalized.offCount) return;
+        const key = `${state.pity}:${state.characterGuaranteed ? 1 : 0}:${state.upCount}:${state.offCount}:${state.lastResult}`;
+        const previous = nextStates.get(key);
+        if (previous) previous.probability += state.probability;
+        else nextStates.set(key, state);
+      };
+
+      for (const state of states.values()) {
+        const fiveRate = getFiveStarRate(state.pity, useSoftPity);
+        if (fiveRate < 1) {
+          add({
+            ...state,
+            pity: state.pity + 1,
+            probability: state.probability * (1 - fiveRate)
+          });
+        }
+        if (normalized.banner === "weapon") {
+          add({
+            pity: 0,
+            characterGuaranteed: state.characterGuaranteed,
+            upCount: state.upCount + 1,
+            offCount: state.offCount,
+            lastResult: "up",
+            probability: state.probability * fiveRate
+          });
+        } else if (state.characterGuaranteed) {
+          add({
+            pity: 0,
+            characterGuaranteed: false,
+            upCount: state.upCount + 1,
+            offCount: state.offCount,
+            lastResult: "up",
+            probability: state.probability * fiveRate
+          });
+        } else {
+          add({
+            pity: 0,
+            characterGuaranteed: false,
+            upCount: state.upCount + 1,
+            offCount: state.offCount,
+            lastResult: "up",
+            probability: state.probability * fiveRate * 0.5
+          });
+          add({
+            pity: 0,
+            characterGuaranteed: true,
+            upCount: state.upCount,
+            offCount: state.offCount + 1,
+            lastResult: "off",
+            probability: state.probability * fiveRate * 0.5
+          });
+        }
+      }
+      states.clear();
+      for (const [key, state] of nextStates.entries()) states.set(key, state);
+    }
+
+    const matching = [];
+    for (const state of states.values()) {
+      if (state.upCount !== normalized.upCount || state.offCount !== normalized.offCount) continue;
+      if (normalized.totalGolds > 0 && state.lastResult !== normalized.lastResult) continue;
+      if (normalized.totalGolds === 0 && state.lastResult !== "none") continue;
+      matching.push(state);
+    }
+    const entries = normalizePosterior(matching);
+    if (entries.length === 0) {
+      return { ok: false, error: "该十连结果与当前保底状态不一致，未写入记录。" };
+    }
+    return { ok: true, banner: normalized.banner, entries, observation: normalized };
+  }
+
+  function consumeTenPullResources(resources, banner) {
+    let nextResources = normalizeResources(resources);
+    for (let index = 0; index < 10; index += 1) {
+      const consumed = consumeOnePull(nextResources, banner);
+      if (!consumed.ok) return consumed;
+      nextResources = consumed.resources;
+    }
+    return { ok: true, resources: nextResources };
+  }
+
+  function applyObservedTenPull(session, record) {
+    const observed = normalizeObservedRecord(record);
+    if (!observed.ok) return { ...observed, session };
+    const state = {
+      bannerState: normalizeBannerState(session.bannerState),
+      resources: normalizeResources(session.resources),
+      progress: normalizeProgress(session.progress),
+      estimatedBanners: session.estimatedBanners || {}
+    };
+    const spent = consumeTenPullResources(state.resources, observed.banner);
+    if (!spent.ok) return { ok: false, error: "资源不足，无法记录这次十连。", session };
+
+    const currentPosterior = state.estimatedBanners[observed.banner];
+    const baseEntries = Array.isArray(currentPosterior) && currentPosterior.length > 0
+      ? currentPosterior
+      : [{
+          pity: observed.banner === "character" ? state.bannerState.characterPity : state.bannerState.weaponPity,
+          characterGuaranteed: state.bannerState.characterGuaranteed,
+          probability: 1
+        }];
+    const posteriorEntries = [];
+    for (const entry of baseEntries) {
+      const posterior = observedTenPullPosterior(entry, observed, session.useSoftPity);
+      if (!posterior.ok) continue;
+      for (const nextEntry of posterior.entries) {
+        posteriorEntries.push({
+          ...nextEntry,
+          probability: nextEntry.probability * (Number(entry.probability) || 0)
+        });
+      }
+    }
+    const nextEntries = normalizePosterior(posteriorEntries);
+    if (nextEntries.length === 0) {
+      return { ok: false, error: "该十连结果与当前保底状态不一致，未写入记录。", session };
+    }
+
+    const nextBannerState = { ...state.bannerState };
+    const nextEstimated = { ...state.estimatedBanners };
+    const isExactNoGold = observed.totalGolds === 0 && !currentPosterior;
+    if (isExactNoGold) {
+      if (observed.banner === "character") nextBannerState.characterPity += 10;
+      else nextBannerState.weaponPity += 10;
+      delete nextEstimated[observed.banner];
+    } else {
+      nextEstimated[observed.banner] = nextEntries;
+    }
+
+    const nextSession = {
+      ...session,
+      bannerState: nextBannerState,
+      resources: spent.resources,
+      progress: {
+        characterCopies: state.progress.characterCopies + (observed.banner === "character" ? observed.upCount : 0),
+        weaponCopies: state.progress.weaponCopies + (observed.banner === "weapon" ? observed.upCount : 0)
+      },
+      estimatedBanners: nextEstimated
+    };
+    return {
+      ok: true,
+      session: nextSession,
+      estimated: !isExactNoGold,
+      posterior: nextEntries,
+      observation: observed
+    };
+  }
+
+  function calculateEstimatedCompletionProbability(input) {
+    const baseState = normalizeBannerState(input.bannerState);
+    const estimated = input.estimatedBanners || {};
+    const characterStates = Array.isArray(estimated.character) && estimated.character.length > 0
+      ? estimated.character
+      : [{ pity: baseState.characterPity, characterGuaranteed: baseState.characterGuaranteed, probability: 1 }];
+    const weaponStates = Array.isArray(estimated.weapon) && estimated.weapon.length > 0
+      ? estimated.weapon
+      : [{ pity: baseState.weaponPity, characterGuaranteed: baseState.characterGuaranteed, probability: 1 }];
+    let probability = 0;
+    let minimum = 1;
+    let maximum = 0;
+    for (const character of characterStates) {
+      for (const weapon of weaponStates) {
+        const weight = (Number(character.probability) || 0) * (Number(weapon.probability) || 0);
+        if (weight <= 0) continue;
+        const result = calculateCompletionProbability({
+          ...input,
+          bannerState: {
+            characterPity: character.pity,
+            weaponPity: weapon.pity,
+            characterGuaranteed: character.characterGuaranteed
+          }
+        });
+        probability += result * weight;
+        minimum = Math.min(minimum, result);
+        maximum = Math.max(maximum, result);
+      }
+    }
+    return { probability, minimum: minimum === 1 && maximum === 0 ? 0 : minimum, maximum };
+  }
+
   const api = {
     ASTRITES_PER_PULL,
     MAX_PITY,
     availablePullSummary,
+    applyObservedTenPull,
     buildSuccessSequence,
     calculateCompletionProbability,
+    calculateEstimatedCompletionProbability,
     getFiveStarRate,
     hardPityRequirement,
     estimateHighestGuaranteedTarget,
@@ -500,6 +743,7 @@
     normalizeGoal,
     normalizeProgress,
     normalizeResources,
+    observedTenPullPosterior,
     validateAndApplyTenPull
   };
 

@@ -233,6 +233,17 @@
             自动捕捉仅读取用户选择的窗口画面。混合多金时需要确认最后一金类型。
           </p>
 
+          <section class="capture-history-tools" aria-label="抽卡历史同步">
+            <div>
+              <span class="capture-overlay-label">抽卡历史</span>
+              <p id="historySyncStatus">打开游戏内与当前池子相同的抽卡历史页后，可在本机同步精确垫抽与小保底状态。</p>
+            </div>
+            <div class="capture-history-actions">
+              <button type="button" class="secondary-button" id="connectGachaHistory">连接并同步历史</button>
+              <button type="button" class="ghost-button" id="chooseGameDirectory">选择游戏目录</button>
+            </div>
+          </section>
+
           <section class="capture-overlay-tools" id="captureOverlayControls" hidden aria-label="浮窗控制">
             <span class="capture-overlay-label">浮窗</span>
             <button type="button" class="ghost-button" id="toggleOverlay" hidden>显示浮窗</button>
@@ -304,17 +315,10 @@
                     </select>
                   </span>
                 </label>
-                <label class="record-field remaining-pity-field">
-                  十连后距离五星保底
-                  <div class="input-with-suffix">
-                    <input id="remainingPity" type="number" min="1" max="80" step="1" value="70">
-                    <span>抽</span>
-                  </div>
-                </label>
               </div>
               <div class="gold-results" id="goldResults"></div>
               <p class="ten-pull-note" id="tenPullNote">
-                五星数量可直接按十连结算画面填写；角色池的最后一个五星类型请在抽卡历史更新后确认。距离五星保底请直接填写卡池界面显示的抽数。
+                五星数量可按十连结算画面填写；无五星时垫抽会精确累计，出现五星后将显示估计概率，待本机抽卡历史更新后自动校正垫抽与小保底。
               </p>
               <div class="ten-pull-validation" id="tenPullValidation" role="status" aria-live="polite" hidden></div>
 

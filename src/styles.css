@@ -1421,6 +1421,31 @@ label {
   padding: 0 2px;
 }
 
+.capture-history-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.46);
+}
+
+.capture-history-tools p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.capture-history-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
 .capture-overlay-tools {
   display: flex;
   align-items: center;
@@ -1918,6 +1943,11 @@ label {
   .capture-grid,
   .capture-pending {
     grid-template-columns: 1fr;
+  }
+
+  .capture-history-tools {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .hard-pity-breakdown,
@@ -2609,6 +2639,23 @@ label,
 
 .capture-note {
   padding: 10px 12px;
+}
+
+.capture-history-tools {
+  border-color: #3d403b;
+  background: #151b1c;
+}
+
+.capture-history-tools p {
+  color: #c3c6bb;
+}
+
+.capture-history-tools p[data-tone="error"] {
+  color: #e2a09a;
+}
+
+.capture-history-tools p[data-tone="success"] {
+  color: #bfe0d8;
 }
 
 .capture-debug pre {

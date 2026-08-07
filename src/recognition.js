@@ -79,28 +79,11 @@
     };
   }
 
-  function parseRemainingPity(text) {
-    const normalized = normalizeText(text);
-    const patterns = [
-      /距离(?:获得)?(?:五星|5星|5★)?(?:角色|武器)?(?:保底)?(?:还需|还有|剩余)?(\d{1,2})抽/,
-      /(?:还需|还有|剩余)(\d{1,2})抽(?:必得|保底|获得)?(?:五星|5星|5★)?/,
-      /(\d{1,2})抽(?:内)?(?:必得|保底|获得)(?:五星|5星|5★)?/
-    ];
-
-    for (const pattern of patterns) {
-      const match = normalized.match(pattern);
-      if (!match) continue;
-      const value = Number(match[1]);
-      if (Number.isInteger(value) && value >= 1 && value <= 80) return value;
-    }
-
-    return null;
-  }
-
   function detectScene(text) {
     const normalized = normalizeText(text);
-    if (/距离|保底|必得|还需|剩余/.test(normalized) && /抽/.test(normalized)) return "pity";
-    if (/获得|五星|5星|调谐|唤取|跳过|确认/.test(normalized)) return "result";
+    const hasGachaTitle = /调谐|唤取/.test(normalized);
+    const hasResultAction = /获得|跳过/.test(normalized);
+    if (hasGachaTitle && hasResultAction) return "result";
     return "unknown";
   }
 
@@ -134,29 +117,28 @@
   function describeRecord(record) {
     if (!record) return "";
     const totalGolds = record.upCount + record.offCount;
-    if (totalGolds === 0) return `无五星，保底剩余 ${record.remainingPity} 抽`;
+    if (totalGolds === 0) return "本次未识别五星";
     const bannerText = record.banner === "weapon" ? "武器池" : "角色池";
     const offText = record.offCount > 0 ? `，非限定 ${record.offCount}` : "";
-    return `${bannerText}：限定 ${record.upCount}${offText}，最后一金${record.lastResult === "off" ? "非限定" : "限定"}，保底剩余 ${record.remainingPity} 抽`;
+    return `${bannerText}：限定 ${record.upCount}${offText}，最后一金${record.lastResult === "off" ? "非限定" : "限定"}`;
   }
 
-  function buildDetectedRecord({ banner, resultText, pityText, remainingPity }) {
+  function buildObservedRecord({ banner, resultText }) {
     const normalizedBanner = banner === "weapon" ? "weapon" : "character";
-    const parsedRemainingPity = Number.isInteger(remainingPity) ? remainingPity : parseRemainingPity(pityText);
-    if (!Number.isInteger(parsedRemainingPity)) {
+    const candidateNames = extractCandidateNames(resultText);
+    const normalizedText = normalizeText(resultText);
+    const hasExplicitGoldMarker = /五星|5星|5★/.test(normalizedText) ||
+      candidateNames.some((name) => isStandardCharacter(name));
+    if (!hasExplicitGoldMarker) {
       return {
         ok: false,
-        needsConfirmation: true,
-        error: "未识别到十连后距离五星保底抽数。"
+        error: "未识别到可验证的五星标识，已忽略本次画面以避免误记。"
       };
     }
-
-    const candidateNames = extractCandidateNames(resultText);
     const classified = classifyFiveStarNames(candidateNames, normalizedBanner);
     const totalGolds = classified.upCount + classified.offCount;
     const hasMixedCharacterGolds = normalizedBanner === "character" &&
-      classified.upCount > 0 &&
-      classified.offCount > 0;
+      classified.upCount > 0 && classified.offCount > 0;
     const lastResult = totalGolds === 0 ? "none" : (
       hasMixedCharacterGolds ? null : (classified.offCount > 0 ? "off" : "up")
     );
@@ -164,13 +146,12 @@
     return {
       ok: true,
       needsConfirmation: hasMixedCharacterGolds,
-      confidence: candidateNames.length > 0 || parsedRemainingPity < 80 ? 0.72 : 0.48,
+      confidence: candidateNames.length > 0 ? 0.72 : 0.56,
       record: {
         banner: normalizedBanner,
         upCount: classified.upCount,
         offCount: classified.offCount,
-        lastResult,
-        remainingPity: parsedRemainingPity
+        lastResult
       },
       names: classified.names,
       offNames: classified.offNames,
@@ -179,7 +160,7 @@
   }
 
   const api = {
-    buildDetectedRecord,
+    buildObservedRecord,
     classifyFiveStarNames,
     describeRecord,
     detectScene,
@@ -187,7 +168,6 @@
     isStandardCharacter,
     normalizeName,
     normalizeText,
-    parseRemainingPity,
     standardFiveStarCharacters
   };
 

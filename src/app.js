@@ -36,7 +36,6 @@
     offBannerGoldField: document.getElementById("offBannerGoldField"),
     offBannerGoldCount: document.getElementById("offBannerGoldCount"),
     lastFiveStar: document.getElementById("lastFiveStar"),
-    remainingPity: document.getElementById("remainingPity"),
     goldResults: document.getElementById("goldResults"),
     tenPullNote: document.getElementById("tenPullNote"),
     tenPullValidation: document.getElementById("tenPullValidation"),
@@ -190,6 +189,7 @@
   }
 
   function formatPercent(value) {
+    if (!Number.isFinite(value)) return "--";
     if (value >= 0.999999) return "100%";
     if (value <= 0.000001) return "0%";
     return `${(value * 100).toFixed(value < 0.1 ? 2 : 1)}%`;
@@ -355,14 +355,19 @@
 
   function calculateAndRender(input, progress) {
     const activeProgress = progress || { characterCopies: 0, weaponCopies: 0 };
-    const probability = engine.calculateCompletionProbability({
+    const probabilityInput = {
       ...input,
       progress: activeProgress
-    });
+    };
+    const hasEstimate = Object.values(input.estimatedBanners || {}).some((entries) => Array.isArray(entries) && entries.length > 0);
+    const probabilityResult = hasEstimate
+      ? engine.calculateEstimatedCompletionProbability(probabilityInput)
+      : engine.calculateCompletionProbability(probabilityInput);
+    const probability = typeof probabilityResult === "number" ? probabilityResult : probabilityResult.probability;
     const missing = engine.missingForHardPity(input.goal, input.bannerState, activeProgress, input.resources);
     const available = engine.availablePullSummary(input.resources);
 
-    elements.completionProbability.textContent = formatPercent(probability);
+    elements.completionProbability.textContent = `${hasEstimate ? "≈" : ""}${formatPercent(probability)}`;
     elements.availablePulls.textContent = `${formatNumber(available.totalFlexible)} 抽`;
     elements.missingPulls.textContent = `${formatNumber(missing.missingTotal)} 抽`;
     elements.missingAstrites.textContent = `${formatNumber(missing.missingAstrites)} 星声`;
@@ -371,7 +376,7 @@
     elements.modelBadge.textContent = input.useSoftPity ? "软保底估计已启用" : "仅硬保底";
     elements.useSoftPity.checked = input.useSoftPity;
 
-    return { probability, missing };
+    return { probability, missing, estimated: hasEstimate, range: hasEstimate ? probabilityResult : null };
   }
 
   function scheduleCalculateAndRender(input, progress, afterRender) {
@@ -399,7 +404,9 @@
         resources: engine.normalizeResources(input.resources),
         progress: { characterCopies: 0, weaponCopies: 0 }
       },
-      records: []
+      records: [],
+      estimatedBanners: {},
+      historySync: {}
     };
     appState.activeSession = session;
     appState.lastInput = input;
@@ -427,23 +434,31 @@
       goal: session.goal,
       bannerState: session.bannerState,
       resources: session.resources,
-      useSoftPity: session.useSoftPity
+      useSoftPity: session.useSoftPity,
+      estimatedBanners: session.estimatedBanners
     };
     renderSessionState(session, "计算中");
     scheduleCalculateAndRender(input, session.progress, (result) => {
       if (!appState.activeSession || appState.activeSession.id !== session.id) return;
-      renderSessionState(session, formatPercent(result.probability));
+      renderSessionState(session, `${result.estimated ? "≈" : ""}${formatPercent(result.probability)}`);
     });
     renderHistory(session.records, session.goal);
   }
 
   function renderSessionState(session, probabilityText) {
+    const characterEstimate = session.estimatedBanners?.character;
+    const weaponEstimate = session.estimatedBanners?.weapon;
+    const expectedPity = (entries, fallback) => {
+      if (!Array.isArray(entries) || entries.length === 0) return `${fallback} 抽`;
+      const value = entries.reduce((total, entry) => total + entry.pity * entry.probability, 0);
+      return `估计 ${value.toFixed(1)} 抽`;
+    };
     const items = [
       ["角色进度", `${session.progress.characterCopies}/${session.goal.characterRank + 1}`, "progress"],
       ["武器进度", `${session.progress.weaponCopies}/${session.goal.weaponCount}`, "progress"],
-      ["角色垫数", `${session.bannerState.characterPity} 抽`, "pity"],
-      ["武器垫数", `${session.bannerState.weaponPity} 抽`, "pity"],
-      ["角色小保底", session.bannerState.characterGuaranteed ? "已触发" : "未触发", "guarantee"],
+      ["角色垫数", expectedPity(characterEstimate, session.bannerState.characterPity), "pity"],
+      ["武器垫数", expectedPity(weaponEstimate, session.bannerState.weaponPity), "pity"],
+      ["角色小保底", characterEstimate ? "等待历史确认" : (session.bannerState.characterGuaranteed ? "已触发" : "未触发"), "guarantee"],
       ["剩余星声", formatNumber(session.resources.astrites), "astrite"],
       ["浮金波纹", formatNumber(session.resources.characterWaves), "radiant"],
       ["铸潮波纹", formatNumber(session.resources.weaponWaves), "forging"],
@@ -496,7 +511,7 @@
       const recordResults = record.results || [];
       const header = document.createElement("div");
       header.className = "history-entry-title";
-      header.textContent = `${bannerName}十连`;
+      header.textContent = `${bannerName}十连${record.estimated ? " · 概率估计中" : (record.historyConfirmed ? " · 历史已校正" : "")}`;
 
       const resultLine = document.createElement("div");
       resultLine.className = "history-result-line";
@@ -543,8 +558,7 @@
       progress.className = "history-progress";
       progress.textContent =
         `当前角色 ${record.afterSnapshot.progress.characterCopies}/${goal.characterRank + 1}，` +
-        `武器 ${record.afterSnapshot.progress.weaponCopies}/${goal.weaponCount}。` +
-        (typeof record.remainingPity === "number" ? ` 十连后距离五星保底 ${record.remainingPity} 抽。` : "");
+        `武器 ${record.afterSnapshot.progress.weaponCopies}/${goal.weaponCount}。`;
 
       item.appendChild(header);
       item.appendChild(resultLine);
@@ -619,16 +633,9 @@
   }
 
   function resetTenPullRecord() {
-    const session = appState.activeSession;
-    const banner = elements.tenPullBanner.value;
-    const startingPity = session
-      ? (banner === "character" ? session.bannerState.characterPity : session.bannerState.weaponPity)
-      : 0;
-    const noGoldPity = startingPity + 10;
     elements.limitedGoldCount.value = 0;
     elements.offBannerGoldCount.value = 0;
     elements.lastFiveStar.value = "none";
-    elements.remainingPity.value = noGoldPity < engine.MAX_PITY ? engine.MAX_PITY - noGoldPity : engine.MAX_PITY;
     syncTenPullFields();
     buildGoldRows();
     renderTenPullValidation();
@@ -667,8 +674,7 @@
       banner,
       upCount: Number(elements.limitedGoldCount.value),
       offCount: banner === "character" ? Number(elements.offBannerGoldCount.value) : 0,
-      lastResult: elements.lastFiveStar.value,
-      remainingPity: Number(elements.remainingPity.value)
+      lastResult: elements.lastFiveStar.value
     };
   }
 
@@ -681,7 +687,7 @@
     }
 
     const record = collectTenPullRecord();
-    const result = record.ok ? engine.validateAndApplyTenPull(appState.activeSession, record) : record;
+    const result = record.ok ? engine.applyObservedTenPull(appState.activeSession, record) : record;
     if (result.ok) {
       validation.hidden = true;
       validation.textContent = "";
@@ -693,35 +699,37 @@
     return false;
   }
 
-  function summarizeRecord(record, nextSession) {
+  function summarizeObservedRecord(record, nextSession, estimated) {
     const bannerName = record.banner === "character" ? "角色池" : "武器池";
     const totalGolds = record.upCount + record.offCount;
     const goldText = totalGolds === 0
-      ? "无五星"
-      : `限定 UP × ${record.upCount}${record.offCount > 0 ? `，非限定 × ${record.offCount}` : ""}，最后一金为${record.lastResult === "off" ? "非限定" : "限定"}`;
-    return `${bannerName}十连：${goldText}。十连后距离五星保底 ${record.remainingPity} 抽。当前角色 ${nextSession.progress.characterCopies}/${nextSession.goal.characterRank + 1}，武器 ${nextSession.progress.weaponCopies}/${nextSession.goal.weaponCount}。`;
+      ? "无五星，垫抽已精确累计"
+      : `限定 ${record.upCount}${record.offCount > 0 ? `，非限定 ${record.offCount}` : ""}，等待历史确认保底`;
+    const stateText = estimated ? "概率为估计值，历史更新后自动校正。" : "保底状态已精确更新。";
+    return `${bannerName}十连：${goldText}。${stateText} 当前角色 ${nextSession.progress.characterCopies}/${nextSession.goal.characterRank + 1}，武器 ${nextSession.progress.weaponCopies}/${nextSession.goal.weaponCount}。`;
   }
 
-  function applyTenPullRecord(record, metadata = {}) {
+  function applyObservedTenPullRecord(record, metadata = {}) {
     if (!appState.activeSession) {
       return { ok: false, error: "请先开启本轮规划。" };
     }
     const beforeSnapshot = {
       bannerState: engine.normalizeBannerState(appState.activeSession.bannerState),
       resources: engine.normalizeResources(appState.activeSession.resources),
-      progress: engine.normalizeProgress(appState.activeSession.progress)
+      progress: engine.normalizeProgress(appState.activeSession.progress),
+      estimatedBanners: structuredClone(appState.activeSession.estimatedBanners || {}),
+      historySync: structuredClone(appState.activeSession.historySync || {})
     };
-    const result = engine.validateAndApplyTenPull(appState.activeSession, record);
-    if (!result.ok) {
-      renderTenPullValidation();
-      return { ok: false, error: result.error };
-    }
+    const result = engine.applyObservedTenPull(appState.activeSession, record);
+    if (!result.ok) return { ok: false, error: result.error };
 
     const nextSession = result.session;
     const afterSnapshot = {
       bannerState: engine.normalizeBannerState(nextSession.bannerState),
       resources: engine.normalizeResources(nextSession.resources),
-      progress: engine.normalizeProgress(nextSession.progress)
+      progress: engine.normalizeProgress(nextSession.progress),
+      estimatedBanners: structuredClone(nextSession.estimatedBanners || {}),
+      historySync: structuredClone(nextSession.historySync || {})
     };
     const results = [
       ...Array.from({ length: record.upCount }, () => ({ result: "up" })),
@@ -734,24 +742,64 @@
         results,
         beforeSnapshot,
         afterSnapshot,
-        summary: summarizeRecord(record, nextSession),
+        summary: summarizeObservedRecord(record, nextSession, result.estimated),
         createdAt: new Date().toISOString(),
-        source: metadata.source || "manual",
+        source: metadata.source || "capture",
         confidence: metadata.confidence || null,
-        detectedNames: metadata.names || []
+        detectedNames: metadata.names || [],
+        estimated: result.estimated,
+        historyConfirmed: !result.estimated
       }
     ];
     appState.activeSession = nextSession;
     saveState();
-    resetTenPullRecord();
     renderSession();
     emitPlannerState();
-    return { ok: true, session: nextSession };
+    return { ok: true, session: nextSession, estimated: result.estimated };
+  }
+
+  function applyHistorySnapshot(snapshot) {
+    const session = appState.activeSession;
+    if (!session || !snapshot || !snapshot.ok) return { ok: false, error: "没有可应用的抽卡历史。" };
+    const banner = snapshot.banner === "weapon" ? "weapon" : "character";
+    const hasPendingEstimate = Array.isArray(session.estimatedBanners?.[banner]) && session.estimatedBanners[banner].length > 0;
+    const canConfirmPending = !hasPendingEstimate || Boolean(snapshot.historyUpdated);
+    if (canConfirmPending) {
+      session.bannerState = engine.normalizeBannerState({ ...session.bannerState, ...snapshot.bannerState });
+    }
+    session.estimatedBanners = { ...(session.estimatedBanners || {}) };
+    if (canConfirmPending) delete session.estimatedBanners[banner];
+    session.historySync = {
+      ...(session.historySync || {}),
+      [banner]: {
+        syncedAt: new Date().toISOString(),
+        fingerprint: snapshot.fingerprint || "",
+        latestFive: snapshot.latestFive || null
+      }
+    };
+    for (let index = session.records.length - 1; canConfirmPending && index >= 0; index -= 1) {
+      const record = session.records[index];
+      if (record.banner !== banner || !record.estimated || record.historyConfirmed) continue;
+      record.historyConfirmed = true;
+      record.estimated = false;
+      record.summary = `${record.summary || "本次十连"} 已由抽卡历史校正。`;
+      break;
+    }
+    saveState();
+    renderSession();
+    emitPlannerState();
+    return { ok: true, session };
   }
 
   function finishSession() {
     const session = appState.activeSession;
     if (!session) return;
+    const hasPendingHistory = Object.values(session.estimatedBanners || {})
+      .some((entries) => Array.isArray(entries) && entries.length > 0);
+    if (hasPendingHistory) {
+      showToast("仍有五星结果等待抽卡历史校正，暂不能结束本轮。");
+      return;
+    }
 
     const nextInput = {
       goal: session.goal,
@@ -895,8 +943,7 @@
   [
     elements.limitedGoldCount,
     elements.offBannerGoldCount,
-    elements.lastFiveStar,
-    elements.remainingPity
+    elements.lastFiveStar
   ].forEach((control) => {
     control.addEventListener("input", () => {
       buildGoldRows();
@@ -918,11 +965,12 @@
       renderTenPullValidation();
       return;
     }
-    const result = applyTenPullRecord(record, { source: "manual" });
+    const result = applyObservedTenPullRecord(record, { source: "manual" });
     if (!result.ok) {
       renderTenPullValidation();
       return;
     }
+    resetTenPullRecord();
     showToast("已记录本次十连");
   });
 
@@ -939,6 +987,8 @@
     appState.activeSession.bannerState = engine.normalizeBannerState(snapshot.bannerState);
     appState.activeSession.resources = engine.normalizeResources(snapshot.resources);
     appState.activeSession.progress = engine.normalizeProgress(snapshot.progress);
+    appState.activeSession.estimatedBanners = structuredClone(snapshot.estimatedBanners || {});
+    appState.activeSession.historySync = structuredClone(snapshot.historySync || {});
   }
 
   elements.undoLastTenPull.addEventListener("click", () => {
@@ -1139,25 +1189,36 @@
       bannerState: session.bannerState,
       resources: session.resources,
       useSoftPity: session.useSoftPity,
-      progress: session.progress
+      progress: session.progress,
+      estimatedBanners: session.estimatedBanners
     };
-    const probability = engine.calculateCompletionProbability(input);
+    const hasEstimate = Object.values(session.estimatedBanners || {}).some((entries) => Array.isArray(entries) && entries.length > 0);
+    const probabilityResult = hasEstimate
+      ? engine.calculateEstimatedCompletionProbability(input)
+      : engine.calculateCompletionProbability(input);
+    const probability = typeof probabilityResult === "number" ? probabilityResult : probabilityResult.probability;
+    const pityValue = (banner, fallback) => {
+      const entries = session.estimatedBanners?.[banner];
+      if (!Array.isArray(entries) || entries.length === 0) return `${fallback} 抽`;
+      const expected = entries.reduce((total, entry) => total + entry.pity * entry.probability, 0);
+      return `估计 ${expected.toFixed(1)} 抽`;
+    };
     const resources = [
       { type: "astrite", label: "星声", value: formatNumber(session.resources.astrites) },
       { type: "radiant", label: "浮金波纹", value: formatNumber(session.resources.characterWaves) },
       { type: "forging", label: "铸潮波纹", value: formatNumber(session.resources.weaponWaves) }
     ];
     const pity = [
-      { label: "角色池", value: `${session.bannerState.characterPity} 抽` },
-      { label: "武器池", value: `${session.bannerState.weaponPity} 抽` },
-      { label: "角色小保底", value: session.bannerState.characterGuaranteed ? "已触发" : "未触发" }
+      { label: "角色池", value: pityValue("character", session.bannerState.characterPity) },
+      { label: "武器池", value: pityValue("weapon", session.bannerState.weaponPity) },
+      { label: "角色小保底", value: session.estimatedBanners?.character ? "等待历史确认" : (session.bannerState.characterGuaranteed ? "已触发" : "未触发") }
     ];
     const progress = [
       { label: "角色进度", value: `${session.progress.characterCopies}/${session.goal.characterRank + 1}` },
       { label: "武器进度", value: `${session.progress.weaponCopies}/${session.goal.weaponCount}` }
     ];
     return {
-      probabilityText: formatPercent(probability),
+      probabilityText: `${hasEstimate ? "≈" : ""}${formatPercent(probability)}`,
       resources,
       pity,
       progress,
@@ -1168,9 +1229,14 @@
   }
 
   window.WuwaPlannerApp = {
-    applyDetectedRecord(record, metadata) {
-      const result = applyTenPullRecord(record, metadata);
-      if (result.ok) showToast("已自动记录本次十连");
+    applyObservedRecord(record, metadata) {
+      const result = applyObservedTenPullRecord(record, metadata);
+      if (result.ok) showToast(result.estimated ? "已记录十连，等待抽卡历史校正" : "已自动记录本次十连");
+      return result;
+    },
+    applyHistorySnapshot(snapshot) {
+      const result = applyHistorySnapshot(snapshot);
+      if (result.ok) showToast("抽卡历史已同步，保底状态已校正");
       return result;
     },
     getOverlaySnapshot: formatOverlaySnapshot,

@@ -8,7 +8,7 @@
   "scripts": {
     "start": "electron .",
     "start:web": "node server.js",
-    "test": "node tests/probability.test.js && node tests/recognition.test.js",
+    "test": "node tests/probability.test.js && node tests/recognition.test.js && node tests/gacha-history.test.js",
     "package:win": "electron-builder --win --dir",
     "package:portable": "electron-builder --win portable"
   },

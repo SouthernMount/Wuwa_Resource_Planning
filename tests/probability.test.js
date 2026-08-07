@@ -27,6 +27,50 @@ function compactSequence(sequence) {
 }
 
 {
+  const session = {
+    bannerState: { characterPity: 12, weaponPity: 0, characterGuaranteed: false },
+    resources: { astrites: 1600, characterWaves: 0, weaponWaves: 0 },
+    progress: { characterCopies: 0, weaponCopies: 0 },
+    useSoftPity: false,
+    estimatedBanners: {}
+  };
+  const result = engine.applyObservedTenPull(session, {
+    banner: "character",
+    upCount: 0,
+    offCount: 0,
+    lastResult: "none"
+  });
+  assert.strictEqual(result.ok, true);
+  assert.strictEqual(result.estimated, false);
+  assert.strictEqual(result.session.bannerState.characterPity, 22);
+}
+
+{
+  const posterior = engine.observedTenPullPosterior(
+    { pity: 0, characterGuaranteed: false },
+    { banner: "character", upCount: 1, offCount: 0, lastResult: "up" },
+    false
+  );
+  assert.strictEqual(posterior.ok, true);
+  const total = posterior.entries.reduce((sum, entry) => sum + entry.probability, 0);
+  approxEqual(total, 1, 1e-12);
+  assert(posterior.entries.every((entry) => entry.pity >= 0 && entry.pity <= 9));
+}
+
+{
+  const result = engine.calculateEstimatedCompletionProbability({
+    ...baseInput({
+      resources: { astrites: 38400, characterWaves: 0, weaponWaves: 0 }
+    }),
+    estimatedBanners: {
+      character: [{ pity: 2, characterGuaranteed: false, probability: 1 }]
+    }
+  });
+  assert(Number.isFinite(result.probability));
+  assert(result.probability >= 0 && result.probability <= 1);
+}
+
+{
   const sequence = engine.buildSuccessSequence(
     { characterRank: 3, weaponCount: 1 },
     { characterCopies: 0, weaponCopies: 0 }

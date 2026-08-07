@@ -2,10 +2,12 @@ const { app, BrowserWindow, desktopCapturer, dialog, globalShortcut, ipcMain, sc
 const fs = require("fs");
 const path = require("path");
 const { pathToFileURL } = require("url");
+const { GachaHistoryService } = require("./gacha-history");
 
 let mainWindow = null;
 let overlayWindow = null;
 let overlayInteractive = true;
+let gachaHistoryService = null;
 const OVERLAY_WIDTH = 390;
 const OVERLAY_MIN_HEIGHT = 392;
 const OVERLAY_MAX_HEIGHT = 720;
@@ -128,6 +130,7 @@ function createOverlayWindow() {
 }
 
 app.whenReady().then(() => {
+  gachaHistoryService = new GachaHistoryService(app.getPath("appData"));
   createMainWindow();
   const shortcutRegistered = globalShortcut.register("CommandOrControl+Shift+O", () => {
     setOverlayInteractive(!overlayInteractive, overlayInteractive
@@ -158,7 +161,7 @@ app.on("will-quit", () => {
 
 ipcMain.handle("capture:list-sources", async () => {
   const sources = await desktopCapturer.getSources({
-    types: ["window", "screen"],
+    types: ["window"],
     thumbnailSize: { width: 320, height: 180 },
     fetchWindowIcons: true
   });
@@ -178,6 +181,24 @@ ipcMain.handle("ocr:get-config", () => {
     corePath: toUrl("node_modules", "tesseract.js-core", "tesseract-core-simd-lstm.wasm.js"),
     langPath: pathToFileURL(findLanguageDataDirectory("chi_sim")).toString()
   };
+});
+
+ipcMain.handle("history:choose-game-directory", async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ["openDirectory"]
+  });
+  if (result.canceled || !result.filePaths[0]) return { ok: false, canceled: true };
+  gachaHistoryService?.setGameRoot(result.filePaths[0]);
+  return { ok: true, gameRoot: result.filePaths[0] };
+});
+
+ipcMain.handle("history:connect", async (_event, banner) => {
+  if (!gachaHistoryService) return { ok: false, status: "unavailable", error: "History service is not ready." };
+  try {
+    return await gachaHistoryService.connect(banner);
+  } catch (error) {
+    return { ok: false, status: "error", error: "Unable to update local gacha history right now." };
+  }
 });
 
 ipcMain.handle("overlay:show", () => {

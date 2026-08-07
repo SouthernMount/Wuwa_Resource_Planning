@@ -14,6 +14,8 @@ contextBridge.exposeInMainWorld("WuwaDesktop", {
   isElectron: true,
   listCaptureSources: () => ipcRenderer.invoke("capture:list-sources"),
   getOcrConfig: () => ipcRenderer.invoke("ocr:get-config"),
+  chooseGameDirectory: () => ipcRenderer.invoke("history:choose-game-directory"),
+  connectHistory: (banner) => ipcRenderer.invoke("history:connect", banner === "weapon" ? "weapon" : "character"),
   showOverlay: () => ipcRenderer.invoke("overlay:show"),
   hideOverlay: () => ipcRenderer.invoke("overlay:hide"),
   updateOverlay: (payload) => ipcRenderer.invoke("overlay:update", payload),
